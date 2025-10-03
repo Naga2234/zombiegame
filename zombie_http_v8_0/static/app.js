@@ -14,6 +14,8 @@ let ZOMBIE_COOLDOWNS={};
 let AVAILABLE_ZOMBIES=[];
 let LOBBY_Z_DECK=[];
 let LOBBY_DECK_NOTICE='';
+let SHOP_TAB='plants';
+let SHOP_DATA=null;
 
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
@@ -143,37 +145,82 @@ function updateOwnedPlants(){
   }
 }
 
-function openShop(){
+function renderShop(){
+  const box=document.getElementById('shopBox');
+  if(!box) return;
+  if(!SHOP_DATA){
+    box.textContent='Загрузка...';
+    return;
+  }
+  const coins = SHOP_DATA.coins||0;
+  const plants = Array.isArray(SHOP_DATA.plants)? SHOP_DATA.plants : [];
+  const zombies = Array.isArray(SHOP_DATA.zombies)? SHOP_DATA.zombies : [];
+  const items = SHOP_TAB==='zombies' ? zombies : plants;
+  const tabsHtml = `<div class="shop-tabs">
+    <button class="btn ${SHOP_TAB==='plants'?'primary':''}" onclick="setShopTab('plants')">Растения</button>
+    <button class="btn ${SHOP_TAB==='zombies'?'primary':''}" onclick="setShopTab('zombies')">Зомби</button>
+  </div>`;
+  const cardsHtml = items.length ? items.map(it=>{
+    const owned = !!it.owned;
+    const zombieInfo = ZOMBIE_LIBRARY[it.item];
+    const extra = SHOP_TAB==='zombies' && zombieInfo ? `<div class="muted">Очки: ${zombieInfo.cost}, Кд: ${zombieInfo.cooldown}s</div>` : '';
+    const kind = SHOP_TAB==='zombies' ? 'Класс зомби' : 'Растение';
+    const status = owned ? '<span class="muted">✅ Куплено</span>' : `<button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button>`;
+    return `<div class="card"><div class="icon">${it.icon||'🛒'}</div><div style="flex:1">
+      <div><b>${it.name||it.item}</b></div>
+      <div class="muted">${kind}</div>
+      ${extra}
+    </div><div style="text-align:right">${status}</div></div>`;
+  }).join('') : '<div class="muted">Нет доступных предметов</div>';
+  box.innerHTML = `<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>${tabsHtml}<div class="sep"></div>${cardsHtml}`;
+}
+
+function setShopTab(tab){
+  SHOP_TAB = tab;
+  renderShop();
+}
+
+function openShop(tab){
+  SHOP_TAB = typeof tab === 'string' ? tab : 'plants';
   shopModal.style.display='flex';
-  const box=document.getElementById('shopBox'); box.textContent='Загрузка...';
+  SHOP_DATA=null;
+  renderShop();
   API('/api/store?u='+encodeURIComponent(USER)).then(j=>{
     const coins = j.coins||0;
-    const items = j.items||[];
-    const owned = items.filter(i=>i.owned).map(i=>i.item);
+    SHOP_DATA={
+      coins,
+      plants: Array.isArray(j.plants)? j.plants : [],
+      zombies: Array.isArray(j.zombies)? j.zombies : [],
+    };
     if(PROFILE){
       PROFILE.coins=coins;
-      PROFILE.owned=owned;
-      PROFILE.zombie_classes=j.zombie_classes||PROFILE.zombie_classes||[];
-      PROFILE.zombie_deck=j.zombie_deck||PROFILE.zombie_deck||[];
+      if(Array.isArray(j.owned)) PROFILE.owned=j.owned;
+      if(Array.isArray(j.zombie_classes)) PROFILE.zombie_classes=j.zombie_classes;
+      if(Array.isArray(j.zombie_deck)) PROFILE.zombie_deck=j.zombie_deck;
       applyZombieDefaults(PROFILE);
       updateOwnedPlants();
     }
-    const html = [`<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>`].concat(items.map(it=>{
-      const ownedClass = it.type==='zombie' ? (it.owned ? '✅ Доступно' : '') : '';
-      const btn = it.owned ? '✅ Куплено' : `<button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button>`;
-      const extra = it.type==='zombie' && it.unlocks ? `<div class="muted">Открывает: ${it.unlocks.map(z=>ZOMBIE_LIBRARY[z]?.name||z).join(', ')}</div>` : '';
-      const kind = it.type==='plant'?'Растение':'Классы зомби';
-      const status = ownedClass ? `${ownedClass}<br>${btn}` : btn;
-      return `<div class="card"><div class="icon">${it.icon}</div><div style="flex:1"><div><b>${it.name}</b></div><div class="muted">${kind}</div>${extra}</div><div>${status}</div></div>`;
-    })).join('');
-    box.innerHTML = html;
+    renderShop();
+  }).catch(()=>{
+    const box=document.getElementById('shopBox');
+    if(box) box.textContent='Не удалось загрузить магазин';
   });
 }
 function buyItem(item){
+  const prevTab = SHOP_TAB;
   API('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:USER,item})}).then(j=>{
     if(j.status==='ok'){
-      if(PROFILE && j.profile){ PROFILE=j.profile; AVAILABLE_ZOMBIES=PROFILE.zombie_classes||[]; updateOwnedPlants(); }
-      openShop(); buildInventory();
+      if(PROFILE && j.profile){
+        PROFILE=j.profile;
+        applyZombieDefaults(PROFILE);
+        PROFILE.owned=Array.isArray(PROFILE.owned)?PROFILE.owned:[];
+        PROFILE.zombie_classes=Array.isArray(PROFILE.zombie_classes)?PROFILE.zombie_classes:[];
+        AVAILABLE_ZOMBIES=PROFILE.zombie_classes.slice();
+        PROFILE.coins=j.coins ?? PROFILE.coins;
+        updateOwnedPlants();
+      }
+      openShop(prevTab);
+      buildInventory();
     }
     else{ alert('Покупка не удалась: '+(j.msg||'')); }
   });
