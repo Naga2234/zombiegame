@@ -32,6 +32,33 @@ ZOMBIE_SPEED = 22
 ZOMBIE_HP_BASE = 120
 ZOMBIE_DPS = 18
 
+DEFAULT_PLANT_OWNED = ["peashooter","sunflower","wallnut"]
+DEFAULT_ZOMBIE_CLASSES = ["normal"]
+DEFAULT_ZOMBIE_DECK = ["normal"]
+
+ZOMBIE_CARD_LIBRARY = {
+    "normal": {"name": "Обычный", "cost": 20, "cooldown": 1.5},
+    "cone": {"name": "Конус", "cost": 35, "cooldown": 4.0},
+    "bucket": {"name": "Ведро", "cost": 55, "cooldown": 5.5},
+    "fast": {"name": "Спринтер", "cost": 28, "cooldown": 3.5},
+    "swarm": {"name": "Рой", "cost": 18, "cooldown": 2.5},
+    "kamikaze": {"name": "Подрывник", "cost": 30, "cooldown": 4.5},
+    "cart": {"name": "Тележка", "cost": 42, "cooldown": 5.5},
+    "screamer": {"name": "Крикун", "cost": 34, "cooldown": 5.0},
+    "shield": {"name": "Щит", "cost": 48, "cooldown": 6.0},
+    "regen": {"name": "Реген", "cost": 44, "cooldown": 5.5},
+    "air": {"name": "Летун", "cost": 36, "cooldown": 4.5},
+    "boss": {"name": "Босс", "cost": 120, "cooldown": 25.0},
+}
+
+ZOMBIE_PACK_UNLOCKS = {
+    "zombies_pack": ["cone","bucket","fast","swarm","kamikaze","cart","screamer","shield","regen","air"]
+}
+
+ZOMBIE_POINT_RATE = 6.0
+ZOMBIE_WAVE_BONUS = 30
+ZOMBIE_WAVE_COOLDOWN = 15.0
+
 # ---- Storage helpers ----
 def load_json(path, default):
     if not os.path.exists(path): return default
@@ -53,8 +80,28 @@ def ensure_user(user):
     users=load_users()
     if user not in users:
         users[user]={"password":"","score":0,"games_played":0,"games_won":0,"plants_placed":0,
-                     "coins":0,"owned":["peashooter","sunflower","wallnut"]}
+                     "coins":0,"owned":DEFAULT_PLANT_OWNED[:],
+                     "zombie_classes":DEFAULT_ZOMBIE_CLASSES[:],
+                     "zombie_deck":DEFAULT_ZOMBIE_DECK[:]}
         save_users(users)
+
+def normalize_user_record(data:dict):
+    if not data: data={}
+    data.setdefault("score",0)
+    data.setdefault("games_played",0)
+    data.setdefault("games_won",0)
+    data.setdefault("plants_placed",0)
+    data.setdefault("coins",0)
+    data.setdefault("owned", DEFAULT_PLANT_OWNED[:])
+    data.setdefault("zombie_classes", DEFAULT_ZOMBIE_CLASSES[:])
+    data.setdefault("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
+    return data
+
+def sanitized_profile(username:str):
+    users=load_users()
+    data=normalize_user_record(users.get(username, {})).copy()
+    if "password" in data: data.pop("password")
+    return data
 
 def hash_pw(pw:str) -> str: return hashlib.sha256(pw.encode("utf-8")).hexdigest()
 
@@ -75,8 +122,65 @@ def roll_weather(wave_number:int):
     if wave_number % 3 == 0: return "rain"
     return "clear"
 
+def assign_roles(room):
+    players=list(room.get("players",[]))
+    choices=room.get("roles",{})
+    defender=None; attacker=None
+    explicit_def=[p for p in players if choices.get(p)=="plant"]
+    explicit_att=[p for p in players if choices.get(p)=="zombie"]
+    if len(explicit_def)>1 or len(explicit_att)>1:
+        return None
+    if explicit_def:
+        defender=explicit_def[0]
+    if explicit_att:
+        attacker=explicit_att[0]
+    remaining=[p for p in players if p not in (defender, attacker)]
+    random.shuffle(remaining)
+    for p in remaining:
+        if defender is None:
+            defender=p
+        elif attacker is None:
+            attacker=p
+    if defender and attacker and defender!=attacker:
+        return {"defender": defender, "attacker": attacker}
+    return None
+
 def init_game_state(room):
     grid = [[None for _ in range(COLS)] for __ in range(ROWS)]
+    mode = room.get("mode","coop")
+    if mode=="pvp":
+        roles = room.get("assigned_roles") or assign_roles(room)
+        defender = roles.get("defender") if roles else None
+        attacker = roles.get("attacker") if roles else None
+        suns = {defender:150} if defender else {}
+        coins = {defender:0}
+        zombie_deck = []
+        if attacker:
+            deck = room.get("zombie_decks",{}).get(attacker) or DEFAULT_ZOMBIE_DECK[:]
+            zombie_deck = [card for card in deck if card in ZOMBIE_CARD_LIBRARY]
+        room["game"] = {
+            "mode":"pvp","grid":grid,"zombies":[],"bullets":[],
+            "suns":suns,"coins":coins,
+            "score":0,"running":True,
+            "start_time":time.time(),
+            "sunflower_timers":{},"special_timers":{},
+            "outcome": None,
+            "defender": defender,
+            "attacker": attacker,
+            "zombie_points": 60,
+            "zombie_deck": zombie_deck,
+            "zombie_cooldowns": {k:0.0 for k in zombie_deck},
+            "pending_manual":[],
+            "wave_number":1,
+            "wave_ready":True,
+            "wave_cd":0.0,
+            "wave_pending":[],
+            "wave_done":[False, False],
+            "await_next":False,
+            "waves":[],
+        }
+        return
+
     waves = [
         {"name":"Волна 1","spawn":[("normal",10)], "interval":1.60},
         {"name":"Волна 2","spawn":[("normal",10),("cone",3)], "interval":1.50},
@@ -111,10 +215,14 @@ def init_game_state(room):
         "weather": roll_weather(1)
     }
 
-def spawn_zombie(room, typ="normal", half=None):
+def spawn_zombie(room, typ="normal", half=None, row=None):
     st=room["game"]
-    if half is None: half = random.choice([0,1])
-    row = random.randint(0,2) if half==0 else random.randint(3,5)
+    if row is not None:
+        row = max(0, min(ROWS-1, row))
+        half = 0 if row <= 2 else 1
+    else:
+        if half is None: half = random.choice([0,1])
+        row = random.randint(0,2) if half==0 else random.randint(3,5)
 
     def mk(hp_mult=1.0, spd_mult=1.0, dps_mult=1.0, special=None):
         return {"row":row,"x":FIELD_WIDTH-10,
@@ -173,19 +281,53 @@ def step_game(room,dt):
     st=room["game"]
     if not st or not st["running"]: return
 
-    # passive sun: per-player; stop for finished half
-    for i,u in enumerate(room["players"][:2]):
-        half = 0 if i==0 else 1
-        if st.get("await_next") and st["wave_done"][half]:
-            continue
-        st["suns"][u] = st["suns"].get(u,0) + SUN_PASSIVE_PER_SEC*dt
+    mode = st.get("mode") or room.get("mode")
 
-    # wave spawn
-    st["wave_spawn_timer"] += dt
-    if st["wave_pending"] and st["wave_spawn_timer"] >= st["wave_interval"]:
-        task = st["wave_pending"].pop()
-        spawn_zombie(room, task["type"], task["half"])
-        st["wave_spawn_timer"] = 0.0
+    if mode == "pvp":
+        defender = st.get("defender")
+        if defender:
+            st["suns"][defender] = st["suns"].get(defender,0) + SUN_PASSIVE_PER_SEC*dt
+        attacker = st.get("attacker")
+        if attacker:
+            st["zombie_points"] = st.get("zombie_points",0.0) + ZOMBIE_POINT_RATE*dt
+        cds = st.setdefault("zombie_cooldowns",{})
+        for k in list(cds.keys()):
+            cds[k]=max(0.0, cds.get(k,0.0)-dt)
+        queue = st.get("pending_manual", [])
+        while queue:
+            req = queue[0]
+            card = ZOMBIE_CARD_LIBRARY.get(req.get("type"))
+            if not card:
+                queue.pop(0)
+                continue
+            cds.setdefault(req["type"],0.0)
+            cost = card.get("cost",30)
+            if st.get("zombie_points",0.0) >= cost and cds.get(req["type"],0.0) <= 0:
+                spawn_zombie(room, req["type"], row=req.get("row"))
+                st["zombie_points"] -= cost
+                cds[req["type"]] = card.get("cooldown",4.0)
+                queue.pop(0)
+            else:
+                break
+        if not st.get("wave_ready", True):
+            st["wave_cd"] = max(0.0, st.get("wave_cd",0.0) - dt)
+            if st["wave_cd"] <= 0:
+                st["wave_cd"]=0.0
+                st["wave_ready"]=True
+    else:
+        # passive sun: per-player; stop for finished half
+        for i,u in enumerate(room["players"][:2]):
+            half = 0 if i==0 else 1
+            if st.get("await_next") and st["wave_done"][half]:
+                continue
+            st["suns"][u] = st["suns"].get(u,0) + SUN_PASSIVE_PER_SEC*dt
+
+        # wave spawn
+        st["wave_spawn_timer"] += dt
+        if st["wave_pending"] and st["wave_spawn_timer"] >= st["wave_interval"]:
+            task = st["wave_pending"].pop()
+            spawn_zombie(room, task["type"], task["half"])
+            st["wave_spawn_timer"] = 0.0
 
     now = time.time()
     # plants
@@ -339,7 +481,7 @@ def step_game(room,dt):
             st["outcome"] = "lose"; st["running"]=False
 
     # wave completion check per half
-    if not st["wave_pending"]:
+    if mode != "pvp" and not st["wave_pending"]:
         any0 = any((0<=z["row"]<=2) for z in st["zombies"])
         any1 = any((3<=z["row"]<=5) for z in st["zombies"])
         st["wave_done"][0] = st["wave_done"][0] or (not any0)
@@ -352,17 +494,36 @@ def snapshot(room, me):
     st = room.get("game")
     if not st: return None
     small_grid=[[None if not cell else {"type":cell["type"],"hp":int(cell["hp"])} for cell in row] for row in st["grid"]]
-    return {"grid":small_grid,
+    mode = st.get("mode") or room.get("mode")
+    role = "observer"
+    if st.get("defender") == me:
+        role = "defender"
+    elif st.get("attacker") == me:
+        role = "attacker"
+    payload={"grid":small_grid,
             "zombies":[{"row": z["row"], "x": z["x"], "hp": int(z["hp"]), "frozen": (z["frozen"]>0), "type": z.get("type","normal"),
                         "shield": int(z.get("shield_hp",0))} for z in st["zombies"]],
             "bullets":[{"row":b["row"],"x":b["x"]} for b in st["bullets"]],
             "sun":int(st["suns"].get(me,0)),"score":int(st["score"]),
             "running":st["running"],"outcome": st["outcome"],
-            "wave_number": st["wave_number"],
-            "await_next": st["await_next"],
-            "wave_done": st["wave_done"],
-            "coins": int(st["coins"].get(me,0)),
-            "weather": st.get("weather","clear")}
+            "wave_number": st.get("wave_number",1),
+            "await_next": st.get("await_next", False),
+            "wave_done": st.get("wave_done", [False, False]),
+            "coins": int(st.get("coins",{}).get(me,0)),
+            "weather": st.get("weather","clear"),
+            "role": role,
+            "defender": st.get("defender"),
+            "attacker": st.get("attacker")}
+    if mode=="pvp":
+        cds={k:max(0.0, st.get("zombie_cooldowns",{}).get(k,0.0)) for k in st.get("zombie_deck",[])}
+        payload.update({
+            "zombie_points": int(st.get("zombie_points",0)),
+            "zombie_deck": st.get("zombie_deck",[]),
+            "zombie_cooldowns": cds,
+            "wave_ready": st.get("wave_ready",True),
+            "wave_cd": st.get("wave_cd",0.0)
+        })
+    return payload
 
 def room_payload(room_id):
     r=rooms.get(room_id)
@@ -375,7 +536,10 @@ def room_payload(room_id):
         "started":r["started"],
         "countdown_until": r.get("countdown_until"),
         "chat": r["chat"][-100:],
-        "locked": bool(r.get("password"))
+        "locked": bool(r.get("password")),
+        "roles": {u: r.get("roles",{}).get(u, "random") for u in r["players"]},
+        "assigned": r.get("assigned_roles"),
+        "zombie_decks": {u: r.get("zombie_decks",{}).get(u, []) for u in r["players"]}
     }}
 
 def game_loop(room_id):
@@ -429,6 +593,7 @@ def game_loop(room_id):
                         users[u]["coins"]=users[u].get("coins",0)+int(st["coins"].get(u,0))
                         save_users(users)
                     room["started"]=False; room["game"]=None
+                    room["assigned_roles"]=None
                     socketio.emit("room_update", room_payload(room_id), to=room_id)
                     socketio.emit("game_over", {"room_id": room_id, "outcome": outcome}, to=room_id)
 
@@ -459,7 +624,9 @@ def api_register():
     users=load_users()
     if u in users: return jsonify({"status":"error","msg":"Пользователь уже существует"}), 409
     users[u]={"password":hash_pw(p),"score":0,"games_played":0,"games_won":0,"plants_placed":0,
-              "coins":0,"owned":["peashooter","sunflower","wallnut"]}
+              "coins":0,"owned":DEFAULT_PLANT_OWNED[:],
+              "zombie_classes":DEFAULT_ZOMBIE_CLASSES[:],
+              "zombie_deck":DEFAULT_ZOMBIE_DECK[:]}
     save_users(users)
     return jsonify({"status":"ok"})
 
@@ -470,7 +637,7 @@ def api_login():
     users=load_users()
     if u not in users or users[u]["password"]!=hash_pw(p):
         return jsonify({"status":"error","msg":"Неверный логин или пароль"}),401
-    prof={k:v for k,v in users[u].items() if k!="password"}
+    prof=sanitized_profile(u)
     return jsonify({"status":"ok","profile":prof})
 
 @app.route("/api/leaderboard")
@@ -487,7 +654,7 @@ def api_profile():
     user_matches=[m for m in matches if u in m.get("players",[])]
     best = max([m.get("score",0) for m in user_matches], default=0)
     recent = sorted(user_matches, key=lambda m: m.get("ended_at",0), reverse=True)[:10]
-    return jsonify({"status":"ok","best":best,"recent":recent,"profile":{k:v for k,v in users.get(u,{}).items() if k!="password"}})
+    return jsonify({"status":"ok","best":best,"recent":recent,"profile":sanitized_profile(u)})
 
 # ---- Store ----
 STORE_ITEMS = [
@@ -498,18 +665,27 @@ STORE_ITEMS = [
     {"item":"potato","type":"plant","price":12,"name":"Картоф. мина","icon":"🥔"},
     {"item":"freeze","type":"plant","price":28,"name":"Заморозка","icon":"❄️"},
     {"item":"bomb","type":"plant","price":35,"name":"Бомба","icon":"💣"},
-    {"item":"zombies_pack","type":"zombie","price":99,"name":"Пак зомби (PvP WIP)","icon":"🧟"},
+    {"item":"zombies_pack","type":"zombie","price":99,"name":"Пак зомби","icon":"🧟","unlocks":ZOMBIE_PACK_UNLOCKS.get("zombies_pack",[])}
 ]
 
 @app.route("/api/store")
 def api_store():
     u=(request.args.get("u") or "").strip()
-    users=load_users(); owned=set(users.get(u,{}).get("owned",[]))
+    users=load_users()
+    info=normalize_user_record(users.get(u, {})) if u else normalize_user_record({})
+    owned=set(info.get("owned",[]))
     items=[]
     for it in STORE_ITEMS:
-        items.append({**it,"owned": it["item"] in owned})
-    coins = int(users.get(u,{}).get("coins",0))
-    return jsonify({"status":"ok","coins":coins,"items":items})
+        meta = {**it,"owned": it["item"] in owned}
+        unlock = ZOMBIE_PACK_UNLOCKS.get(it["item"])
+        if unlock:
+            meta["unlocks"] = unlock
+            meta["owned"] = meta["owned"] or set(unlock).issubset(set(info.get("zombie_classes",[])))
+        items.append(meta)
+    coins = int(info.get("coins",0))
+    return jsonify({"status":"ok","coins":coins,"items":items,
+                    "zombie_classes":info.get("zombie_classes",[]),
+                    "zombie_deck":info.get("zombie_deck",[])})
 
 @app.route("/api/buy", methods=["POST"])
 def api_buy():
@@ -520,13 +696,28 @@ def api_buy():
     if u not in users: return jsonify({"status":"error","msg":"Пользователь не найден"}),404
     info = next((x for x in STORE_ITEMS if x["item"]==item), None)
     if not info: return jsonify({"status":"error","msg":"Товар не найден"}),404
-    if item in users[u].get("owned",[]): return jsonify({"status":"error","msg":"Уже куплено"}),400
+    rec = normalize_user_record(users[u])
+    if info.get("type")!="zombie" and item in rec.get("owned",[]):
+        return jsonify({"status":"error","msg":"Уже куплено"}),400
     price=int(info["price"])
-    if users[u].get("coins",0) < price: return jsonify({"status":"error","msg":"Не хватает монет"}),400
-    users[u]["coins"]-=price
-    users[u].setdefault("owned",[]).append(item)
+    if rec.get("coins",0) < price:
+        return jsonify({"status":"error","msg":"Не хватает монет"}),400
+    rec["coins"] = rec.get("coins",0) - price
+    if info.get("type") == "zombie":
+        unlock = ZOMBIE_PACK_UNLOCKS.get(item, [])
+        classes=set(rec.get("zombie_classes",[]))
+        classes.update(unlock)
+        rec["zombie_classes"] = sorted(classes)
+        rec.setdefault("owned", DEFAULT_PLANT_OWNED[:])
+        if item not in rec["owned"]:
+            rec["owned"].append(item)
+    else:
+        rec.setdefault("owned", DEFAULT_PLANT_OWNED[:])
+        if item not in rec["owned"]:
+            rec["owned"].append(item)
+    users[u]=rec
     save_users(users)
-    return jsonify({"status":"ok","coins":users[u]["coins"],"owned":users[u]["owned"]})
+    return jsonify({"status":"ok","coins":rec["coins"],"profile":sanitized_profile(u)})
 
 # -------- Socket.IO ----------
 @socketio.on("connect")
@@ -546,6 +737,14 @@ def on_join_room(data):
         if username not in r["players"] and not r["started"] and len(r["players"])<r["max_players"]:
             r["players"].append(username); r["ready"][username]=False
             r["chat"].append({"user":"system","text":f"{username} присоединился"})
+        ensure_user(username)
+        prof = sanitized_profile(username)
+        r.setdefault("roles",{})
+        r.setdefault("zombie_decks",{})
+        if username not in r["roles"]:
+            r["roles"][username]="random"
+        if username not in r["zombie_decks"]:
+            r["zombie_decks"][username]=prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
         join_room(room_id)
         emit("join_result", {"status":"ok","room": room_payload(room_id)["room"]})
         socketio.emit("room_update", room_payload(room_id), to=room_id)
@@ -573,6 +772,10 @@ def on_leave_room(data):
             r["ready"].pop(username, None)
             r["chat"].append({"user":"system","text":f"{username} вышел"})
             socketio.emit("chat", {"user":"system","text":f"{username} вышел"}, to=room_id)
+            if username in r.get("roles",{}):
+                r["roles"].pop(username, None)
+            if username in r.get("zombie_decks",{}):
+                r["zombie_decks"].pop(username, None)
         if not r["started"] and r["players"] and r["owner"] not in r["players"]:
             r["owner"] = r["players"][0]
             r["chat"].append({"user":"system","text":f"Новый хост — {r['owner']}"})
@@ -591,8 +794,54 @@ def on_toggle_ready(data):
         r=rooms.get(room_id)
         if not r or r.get("started"): return
         cur = bool(r["ready"].get(username, False))
+        if not cur and r.get("mode")=="pvp":
+            role = r.get("roles",{}).get(username,"random")
+            if role=="zombie":
+                deck = r.get("zombie_decks",{}).get(username, [])
+                if not deck:
+                    emit("error", {"msg":"Выберите деку зомби"})
+                    return
         r["ready"][username] = not cur
         socketio.emit("room_update", room_payload(room_id), to=room_id)
+
+@socketio.on("select_role")
+def on_select_role(data):
+    username=(data.get("username") or "").strip()
+    room_id=(data.get("room_id") or "").strip()
+    role=(data.get("role") or "random").strip()
+    if role not in ("plant","zombie","random"): role="random"
+    with rooms_lock:
+        r=rooms.get(room_id)
+        if not r or r.get("started"): return
+        r.setdefault("roles",{})[username]=role
+        r["assigned_roles"]=None
+        socketio.emit("room_update", room_payload(room_id), to=room_id)
+
+@socketio.on("set_zombie_deck")
+def on_set_zombie_deck(data):
+    username=(data.get("username") or "").strip()
+    room_id=(data.get("room_id") or "").strip()
+    deck=data.get("deck") or []
+    if not isinstance(deck, list): deck=[]
+    users=load_users()
+    rec=normalize_user_record(users.get(username, {}))
+    allowed=set(rec.get("zombie_classes",[]))
+    cleaned=[c for c in deck if c in allowed and c in ZOMBIE_CARD_LIBRARY][:6]
+    if not cleaned:
+        cleaned=rec.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
+    rec["zombie_deck"]=cleaned
+    users[username]=rec
+    save_users(users)
+    with rooms_lock:
+        r=rooms.get(room_id)
+        if r:
+            r.setdefault("zombie_decks",{})[username]=cleaned
+            st=r.get("game")
+            if st and st.get("mode")=="pvp" and st.get("attacker")==username:
+                st["zombie_deck"]=cleaned
+                st.setdefault("zombie_cooldowns",{})
+    socketio.emit("room_update", room_payload(room_id), to=room_id)
+    emit("deck_saved", {"deck": cleaned})
 
 @socketio.on("start")
 def on_start(data):
@@ -604,10 +853,57 @@ def on_start(data):
         if r["owner"]!=username: emit("error", {"msg":"Только хост может стартовать"}); return
         if len(r["players"])!=r["max_players"] or not all(r["ready"].get(u,False) for u in r["players"]):
             emit("error", {"msg":"Не все готовы"}); return
+        if r["mode"]=="pvp":
+            roles = assign_roles(r)
+            if not roles:
+                emit("error", {"msg":"Невозможно назначить роли"})
+                return
+            attacker = roles.get("attacker")
+            if attacker:
+                deck = r.get("zombie_decks",{}).get(attacker, [])
+                if not deck:
+                    emit("error", {"msg":"Зомби без деки"})
+                    return
+            r["assigned_roles"] = roles
         r["countdown_until"] = time.time() + 10
         r["chat"].append({"user":"system","text":"Старт через 10 секунд!"})
         socketio.emit("room_update", room_payload(room_id), to=room_id)
         socketio.emit("chat", {"user":"system","text":"Старт через 10 секунд!"}, to=room_id)
+
+@socketio.on("spawn_zombie_manual")
+def on_spawn_zombie_manual(data):
+    username=(data.get("username") or "").strip()
+    room_id=(data.get("room_id") or "").strip()
+    ztype=(data.get("ztype") or "").strip()
+    row=int(data.get("row",0))
+    with rooms_lock:
+        r=rooms.get(room_id)
+        if not r or not r.get("started"): return
+        st=r.get("game")
+        if not st or st.get("mode")!="pvp" or st.get("attacker")!=username:
+            return
+        if ztype not in st.get("zombie_deck",[]):
+            return
+        st.setdefault("pending_manual",[]).append({"type":ztype,"row":row})
+
+@socketio.on("trigger_wave")
+def on_trigger_wave(data):
+    username=(data.get("username") or "").strip()
+    room_id=(data.get("room_id") or "").strip()
+    with rooms_lock:
+        r=rooms.get(room_id)
+        if not r or not r.get("started"): return
+        st=r.get("game")
+        if not st or st.get("mode")!="pvp" or st.get("attacker")!=username:
+            return
+        if not st.get("wave_ready", True):
+            return
+        bonus = ZOMBIE_WAVE_BONUS + max(0, st.get("wave_number",1)-1)*10
+        st["zombie_points"] = st.get("zombie_points",0.0) + bonus
+        st["wave_ready"]=False
+        st["wave_cd"]=ZOMBIE_WAVE_COOLDOWN
+        st["wave_number"]=st.get("wave_number",1)+1
+        socketio.emit("chat", {"user":"system","text":f"Зомби готовят волну {st['wave_number']}!"}, to=room_id)
 
 @socketio.on("next_wave")
 def on_next_wave(data):
@@ -650,8 +946,14 @@ def on_place_plant(data):
         users=load_users(); owned=set(users.get(username,{}).get("owned",["peashooter","sunflower","wallnut"]))
         if ptype not in owned:
             emit("action_result", {"status":"error","msg":"Растение не куплено"}); return
-        idx=room["players"].index(username) if username in room["players"] else 0
-        allowed=range(0,3) if idx==0 else range(3,6)
+        if room.get("mode") == "pvp":
+            defender = st.get("defender") or (room.get("assigned_roles") or {}).get("defender")
+            if defender != username:
+                emit("action_result", {"status":"error","msg":"Вы не защитник"}); return
+            allowed=range(0,6)
+        else:
+            idx=room["players"].index(username) if username in room["players"] else 0
+            allowed=range(0,3) if idx==0 else range(3,6)
         if r not in allowed: emit("action_result", {"status":"error","msg":"Не ваша зона"}); return
         if st["grid"][r][c] is not None: emit("action_result", {"status":"error","msg":"Занято"}); return
         if ptype not in PLANT_COSTS: emit("action_result", {"status":"error","msg":"Неизвестное растение"}); return
@@ -680,6 +982,9 @@ def api_create_room():
             "ready":{username:False},"started":False,"game":None,"owner":username,
             "countdown_until": None, "chat":[{"user":"system","text":f"Комната «{room_name}» создана хостом {username}"}]
         }
+        rooms[rid]["roles"]={username:"random"}
+        rooms[rid]["assigned_roles"]=None
+        rooms[rid]["zombie_decks"]={}
         socketio.start_background_task(game_loop, rid)
     return jsonify({"status":"ok","room_id":rid})
 
