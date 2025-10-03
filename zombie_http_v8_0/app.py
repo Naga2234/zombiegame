@@ -651,7 +651,8 @@ def game_loop(room_id):
             if room and room.get("started"):
                 # personalized state per player
                 for u in room["players"]:
-                    socketio.emit("state_update", {"room_id": room_id, "state": snapshot(room, u)}, to=room_id)
+                    payload = {"room_id": room_id, "state": snapshot(room, u), "target": u}
+                    socketio.emit("state_update", payload, to=f"user:{u}")
 
         socketio.sleep(1.0/TICK_HZ)
 
@@ -814,6 +815,8 @@ def on_join_room(data):
         if username not in r["zombie_decks"]:
             r["zombie_decks"][username]=prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
         join_room(room_id)
+        if username:
+            join_room(f"user:{username}")
         emit("join_result", {"status":"ok","room": room_payload(room_id)["room"]})
         socketio.emit("room_update", room_payload(room_id), to=room_id)
         socketio.emit("chat", {"user":"system","text":f"{username} присоединился"}, to=room_id)
@@ -826,6 +829,8 @@ def on_rejoin(data):
         r=rooms.get(room_id)
         if not r: emit("error", {"msg":"Комната не найдена"}); return
         join_room(room_id)
+        if username:
+            join_room(f"user:{username}")
         socketio.emit("room_update", room_payload(room_id), to=room_id)
 
 @socketio.on("leave_room")
@@ -835,6 +840,9 @@ def on_leave_room(data):
     with rooms_lock:
         r=rooms.get(room_id)
         if not r: return
+        if username:
+            leave_room(f"user:{username}")
+            leave_room(room_id)
         if username in r["players"] and not r["started"]:
             r["players"].remove(username)
             r["ready"].pop(username, None)
