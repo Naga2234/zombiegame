@@ -198,8 +198,10 @@ def init_game_state(room):
     players = list(room.get("players", []))
     users = load_users()
     owned_cache = {}
+    profile_cache = {}
     for u in players:
         rec = normalize_user_record(users.get(u, {}))
+        profile_cache[u] = rec
         owned_cache[u] = set(rec.get("owned", DEFAULT_PLANT_OWNED[:]))
     if mode=="pvp":
         roles = room.get("assigned_roles") or assign_roles(room)
@@ -209,10 +211,18 @@ def init_game_state(room):
         coins = {defender:0}
         zombie_deck = []
         if attacker:
-            deck = room.get("zombie_decks",{}).get(attacker) or DEFAULT_ZOMBIE_DECK[:]
+            decks = room.setdefault("zombie_decks", {})
+            deck = decks.get(attacker)
+            attacker_profile = profile_cache.get(attacker) or normalize_user_record(users.get(attacker, {}))
+            if not deck:
+                deck = attacker_profile.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
+                decks[attacker] = list(deck[:6])
             zombie_deck = [card for card in deck if card in ZOMBIE_CARD_LIBRARY]
             if not zombie_deck:
-                zombie_deck = DEFAULT_ZOMBIE_DECK[:]
+                fallback = attacker_profile.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
+                zombie_deck = [card for card in fallback if card in ZOMBIE_CARD_LIBRARY]
+                if not zombie_deck:
+                    zombie_deck = DEFAULT_ZOMBIE_DECK[:]
         room["game"] = {
             "mode":"pvp","grid":grid,"zombies":[],"bullets":[],
             "suns":suns,"coins":coins,
@@ -834,11 +844,11 @@ def on_join_room(data):
         ensure_user(username)
         prof = sanitized_profile(username)
         r.setdefault("roles",{})
-        r.setdefault("zombie_decks",{})
+        decks = r.setdefault("zombie_decks",{})
         if username not in r["roles"]:
             r["roles"][username]="random"
-        if username not in r["zombie_decks"]:
-            r["zombie_decks"][username]=prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
+        if not decks.get(username):
+            decks[username]=list((prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:]))[:6])
         join_room(room_id)
         if username:
             join_room(f"user:{username}")
@@ -898,10 +908,12 @@ def on_toggle_ready(data):
         if not cur and r.get("mode")=="pvp":
             role = r.get("roles",{}).get(username,"random")
             if role=="zombie":
-                deck = r.get("zombie_decks",{}).get(username, [])
+                decks = r.setdefault("zombie_decks", {})
+                deck = decks.get(username)
                 if not deck:
-                    emit("error", {"msg":"Выберите деку зомби"})
-                    return
+                    users = load_users()
+                    prof = normalize_user_record(users.get(username, {}))
+                    decks[username] = list((prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:]))[:6])
         r["ready"][username] = not cur
         socketio.emit("room_update", room_payload(room_id), to=room_id)
 
@@ -961,10 +973,12 @@ def on_start(data):
                 return
             attacker = roles.get("attacker")
             if attacker:
-                deck = r.get("zombie_decks",{}).get(attacker, [])
+                decks = r.setdefault("zombie_decks", {})
+                deck = decks.get(attacker)
                 if not deck:
-                    emit("error", {"msg":"Зомби без деки"})
-                    return
+                    users = load_users()
+                    prof = normalize_user_record(users.get(attacker, {}))
+                    decks[attacker] = list((prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:]))[:6])
             r["assigned_roles"] = roles
         r["countdown_until"] = time.time() + 10
         r["chat"].append({"user":"system","text":"Старт через 10 секунд!"})
