@@ -200,7 +200,7 @@ function renderShop(){
       ${extra}
     </div><div style="text-align:right">${status}</div></div>`;
   }).join('') : '<div class="muted">Нет доступных предметов</div>';
-  box.innerHTML = `<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>${tabsHtml}<div class="sep"></div>${cardsHtml}`;
+  box.innerHTML = `<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>${tabsHtml}<div class="sep"></div><div class="shop-items">${cardsHtml}</div>`;
 }
 
 function setShopTab(tab){
