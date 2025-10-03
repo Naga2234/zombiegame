@@ -13,6 +13,7 @@ let ZOMBIE_DECK=[];
 let ZOMBIE_COOLDOWNS={};
 let SHOP_TAB='plants';
 let SHOP_DATA=null;
+let PLANT_COOLDOWN_UNTIL=0;
 
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
@@ -276,7 +277,12 @@ socket.on('room_deleted', (payload)=>{
 });
 socket.on('action_result', (payload={})=>{
   const pending = PENDING_ACTIONS.length ? PENDING_ACTIONS.shift() : null;
+  if(typeof payload.cooldown === 'number'){
+    const remain = Math.max(0, Number(payload.cooldown));
+    PLANT_COOLDOWN_UNTIL = Date.now() + remain*1000;
+  }
   if(payload.status==='ok'){
+    PLANT_COOLDOWN_UNTIL = Math.max(PLANT_COOLDOWN_UNTIL, Date.now()+500);
     if(pending && pending.type==='place'){
       SUN_NOW = Math.max(0, SUN_NOW - (pending.cost||0));
       if(GAME_STATE){ GAME_STATE.sun = SUN_NOW; if(VIEW==='game') redraw(); }
@@ -306,6 +312,10 @@ socket.on('state_update', (payload={})=>{
   const prevCooldowns=ZOMBIE_COOLDOWNS;
   const prevDeck=ZOMBIE_DECK.slice();
   SUN_NOW=st.sun;
+  if(typeof st.plant_cooldown === 'number'){
+    const remainMs = Math.max(0, Number(st.plant_cooldown)*1000);
+    PLANT_COOLDOWN_UNTIL = Date.now() + remainMs;
+  }
   const nextPoints=(typeof st.zombie_points==='number') ? st.zombie_points : prevPoints;
   const nextCooldowns=(st.zombie_cooldowns && typeof st.zombie_cooldowns==='object') ? {...st.zombie_cooldowns} : prevCooldowns||{};
   let deckChanged=false;
@@ -563,6 +573,11 @@ function renderDefenderGame(isPvP){
     const rect=cvs.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
     if(x>9*80) return; const c=Math.floor(x/80), r=Math.floor(y/80);
     const p=PLANTS.find(x=>x.code===CURRENT); if(!p) return;
+    const nowTs=Date.now();
+    if(nowTs < PLANT_COOLDOWN_UNTIL){
+      setStatus('Ожидайте перезарядку посадки');
+      return;
+    }
     if(SUN_NOW < p.cost){ setStatus('Недостаточно солнца'); return; }
     if(!canPlace(r,c)){ setStatus('Недоступная клетка'); return; }
     PENDING_ACTIONS.push({type:'place', plant:CURRENT, cost:p.cost});

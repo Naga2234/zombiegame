@@ -254,6 +254,7 @@ def init_game_state(room):
             "waves":[],
             "weather": random_weather(),
             "owned_plants": owned_cache,
+            "plant_cooldowns": {u:0.0 for u in players},
         }
         return
 
@@ -290,6 +291,7 @@ def init_game_state(room):
         "wave_spawn_timer":0.0, "wave_done":[False,False], "await_next":False,
         "weather": roll_weather(1),
         "owned_plants": owned_cache,
+        "plant_cooldowns": {u:0.0 for u in room["players"]},
     }
 
 def spawn_zombie(room, typ="normal", half=None, row=None):
@@ -600,6 +602,12 @@ def snapshot(room, me):
             "role": role,
             "defender": st.get("defender"),
             "attacker": st.get("attacker")}
+    cooldowns = st.get("plant_cooldowns", {})
+    last = cooldowns.get(me)
+    if last is not None:
+        payload["plant_cooldown"] = max(0.0, 0.5 - (time.time() - last))
+    else:
+        payload["plant_cooldown"] = 0.0
     if mode=="pvp":
         cds={k:max(0.0, st.get("zombie_cooldowns",{}).get(k,0.0)) for k in st.get("zombie_deck",[])}
         payload.update({
@@ -1079,9 +1087,20 @@ def on_place_plant(data):
         if ptype not in PLANT_COSTS: emit("action_result", {"status":"error","msg":"Неизвестное растение"}); return
         cost=PLANT_COSTS[ptype]
         if st["suns"].get(username,0)<cost: emit("action_result", {"status":"error","msg":"Нет солнца"}); return
+        cooldowns = st.setdefault("plant_cooldowns", {})
+        last = cooldowns.get(username, 0.0)
+        now = time.time()
+        if now - last < 0.5:
+            remaining = max(0.0, 0.5 - (now - last))
+            emit("action_result", {"status":"error","msg":"Ожидайте перед посадкой","cooldown":remaining});
+            return
         st["suns"][username]-=cost
         st["grid"][r][c]={"type":ptype,"hp":PLANT_HP[ptype],"owner":username,"cd":0.0}
+        cooldowns[username]=now
         emit("action_result", {"status":"ok"})
+        for u in room.get("players", []):
+            payload = {"room_id": rid, "state": snapshot(room, u), "target": u}
+            socketio.emit("state_update", payload, to=f"user:{u}")
 
 # ---- Rooms HTTP ----
 @app.route("/api/create_room", methods=["POST"])
