@@ -45,6 +45,7 @@ const PLANTS_ALL=[
   {key:'0', code:'cabbage',    name:'Капуст. пушка', icon:'🥬', cost:160},
 ];
 let PLANTS=PLANTS_ALL.slice(); // filtered by ownership later
+const PLANT_COST_MAP = PLANTS_ALL.reduce((acc, item)=>{ acc[item.code]=item.cost; return acc; }, {});
 
 const ZOMBIE_LIBRARY={
   normal:{name:'Обычный',icon:'🧟',cost:20,cooldown:1.5},
@@ -293,6 +294,30 @@ socket.on('action_result', (payload={})=>{
   if(typeof payload.cooldown === 'number'){
     const remain = Math.max(0, Number(payload.cooldown));
     PLANT_COOLDOWN_UNTIL = Date.now() + remain*1000;
+  }
+  if(payload.status==='sold'){
+    if(pending && pending.type==='sell'){
+      const refund = Number(payload.refund)||0;
+      if(Number.isFinite(Number(payload.sun))){
+        SUN_NOW = Math.max(0, Number(payload.sun));
+      } else {
+        SUN_NOW = Math.max(0, SUN_NOW + refund);
+      }
+      const bonus = refund || Math.floor((PLANT_COST_MAP[pending.ptype]||0)/2);
+      if(GAME_STATE){
+        if(Array.isArray(GAME_STATE.grid) && GAME_STATE.grid[pending.row]){
+          GAME_STATE.grid[pending.row][pending.col]=null;
+        }
+        GAME_STATE.sun = SUN_NOW;
+      }
+      if(VIEW==='game'){
+        if(GAME_STATE){ redraw(); }
+        else { highlightInventory(); }
+      }
+      const msg = payload.msg || `Растение продано (+${Math.floor(bonus)})`;
+      setStatus(msg);
+    }
+    return;
   }
   if(payload.status==='ok'){
     PLANT_COOLDOWN_UNTIL = Math.max(PLANT_COOLDOWN_UNTIL, Date.now()+500);
@@ -585,6 +610,15 @@ function renderDefenderGame(isPvP){
     if(!ROOM_ID||!GAME_STATE) return;
     const rect=cvs.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
     if(x>9*80) return; const c=Math.floor(x/80), r=Math.floor(y/80);
+    const cellData=(GAME_STATE?.grid?.[r]||[])[c];
+    if(e.shiftKey){
+      if(!cellData){ setStatus('Здесь нет растения для продажи'); return; }
+      const plantType=cellData?.type;
+      if(!plantType){ setStatus('Нельзя продать неизвестное растение'); return; }
+      PENDING_ACTIONS.push({type:'sell', row:r, col:c, ptype:plantType});
+      socket.emit('sell_plant',{room_id:ROOM_ID,username:USER,row:r,col:c,ptype:plantType});
+      return;
+    }
     const p=PLANTS.find(x=>x.code===CURRENT); if(!p) return;
     const nowTs=Date.now();
     if(nowTs < PLANT_COOLDOWN_UNTIL){
