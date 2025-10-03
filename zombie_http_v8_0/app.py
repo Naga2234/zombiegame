@@ -169,6 +169,9 @@ def roll_weather(wave_number:int):
     if wave_number % 3 == 0: return "rain"
     return "clear"
 
+def random_weather():
+    return roll_weather(random.randint(1, 999))
+
 def assign_roles(room):
     players=list(room.get("players",[]))
     choices=room.get("roles",{})
@@ -243,7 +246,7 @@ def init_game_state(room):
             "wave_done":[False, False],
             "await_next":False,
             "waves":[],
-            "weather": "clear",
+            "weather": random_weather(),
             "owned_plants": owned_cache,
         }
         return
@@ -384,6 +387,7 @@ def step_game(room,dt):
             st["wave_ready"] = False
             st["wave_cd"] = ZOMBIE_WAVE_COOLDOWN
             st["wave_number"] = st.get("wave_number",1) + 1
+            st["weather"] = random_weather()
             socketio.emit("chat", {"user":"system","text":f"Зомби готовят волну {st['wave_number']}!"}, to=room["id"])
         else:
             st["wave_cd"] = max(0.0, st.get("wave_cd",0.0) - dt)
