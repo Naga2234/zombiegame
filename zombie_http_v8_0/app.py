@@ -195,6 +195,12 @@ def assign_roles(room):
 def init_game_state(room):
     grid = [[None for _ in range(COLS)] for __ in range(ROWS)]
     mode = room.get("mode","coop")
+    players = list(room.get("players", []))
+    users = load_users()
+    owned_cache = {}
+    for u in players:
+        rec = normalize_user_record(users.get(u, {}))
+        owned_cache[u] = set(rec.get("owned", DEFAULT_PLANT_OWNED[:]))
     if mode=="pvp":
         roles = room.get("assigned_roles") or assign_roles(room)
         defender = roles.get("defender") if roles else None
@@ -227,6 +233,7 @@ def init_game_state(room):
             "wave_done":[False, False],
             "await_next":False,
             "waves":[],
+            "owned_plants": owned_cache,
         }
         return
 
@@ -261,7 +268,8 @@ def init_game_state(room):
         "wave_number":1,"waves":waves,
         "wave_pending":pending, "wave_interval":waves[0]["interval"],
         "wave_spawn_timer":0.0, "wave_done":[False,False], "await_next":False,
-        "weather": roll_weather(1)
+        "weather": roll_weather(1),
+        "owned_plants": owned_cache,
     }
 
 def spawn_zombie(room, typ="normal", half=None, row=None):
@@ -794,6 +802,15 @@ def api_buy():
     rec = normalize_user_record(rec)
     users[u]=rec
     save_users(users)
+    if info.get("type") != "zombie":
+        updated_owned = set(rec.get("owned", DEFAULT_PLANT_OWNED[:]))
+        with rooms_lock:
+            for room in rooms.values():
+                if u in room.get("players", []):
+                    game = room.get("game")
+                    if game:
+                        plants = game.setdefault("owned_plants", {})
+                        plants[u] = set(updated_owned)
     return jsonify({"status":"ok","coins":rec["coins"],"profile":sanitized_profile(u)})
 
 # -------- Socket.IO ----------
@@ -1007,8 +1024,14 @@ def on_place_plant(data):
         if not room or not room.get("started") or not room.get("game"):
             emit("action_result", {"status":"error","msg":"Игра не идёт"}); return
         st=room["game"]
-        # ownership check (shop)
-        users=load_users(); owned=set(users.get(username,{}).get("owned",["peashooter","sunflower","wallnut"]))
+        owned_map = st.setdefault("owned_plants", {})
+        owned = owned_map.get(username)
+        if owned is None:
+            owned = set(DEFAULT_PLANT_OWNED[:])
+            owned_map[username] = owned
+        elif not isinstance(owned, set):
+            owned = set(owned)
+            owned_map[username] = owned
         if ptype not in owned:
             emit("action_result", {"status":"error","msg":"Растение не куплено"}); return
         if room.get("mode") == "pvp":
