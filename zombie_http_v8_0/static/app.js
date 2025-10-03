@@ -910,6 +910,18 @@ function redrawZombie(){
 function canPlace(r,c){
   if(!GAME_STATE) return false;
   if(GAME_STATE.grid[r][c]) return false;
+  const cellRight=(c+1)*80;
+  const threshold=cellRight - 0.4*80;
+  if(Array.isArray(GAME_STATE.zombies)){
+    for(const z of GAME_STATE.zombies){
+      if(!z || z.row!==r) continue;
+      const zx=Number(z.x);
+      if(!Number.isFinite(zx)) continue;
+      if(Math.floor(zx/80)!==c) continue;
+      if(z.flying) continue;
+      if(zx < threshold) return false;
+    }
+  }
   if((ROOM_CACHE?.mode)==='pvp'){ return MY_ROLE!=='attacker'; }
   const allowed = (MY_INDEX===0) ? (r>=0 && r<3) : (r>=3 && r<6);
   return allowed;

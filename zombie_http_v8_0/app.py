@@ -592,7 +592,12 @@ def snapshot(room, me):
         role = "attacker"
     payload={"grid":small_grid,
             "zombies":[{"row": z["row"], "x": z["x"], "hp": int(z["hp"]), "frozen": (z["frozen"]>0), "type": z.get("type","normal"),
-                        "shield": int(z.get("shield_hp",0))} for z in st["zombies"]],
+                        "shield": int(z.get("shield_hp",0)),
+                        "flying": bool(
+                            z.get("special") == "air" and
+                            z.get("flying_until_x") is not None and
+                            z.get("x", FIELD_WIDTH) > z.get("flying_until_x")
+                        )} for z in st["zombies"]],
             "bullets":[{"row":b["row"],"x":b["x"]} for b in st["bullets"]],
             "sun":int(st["suns"].get(me,0)),"score":int(st["score"]),
             "running":st["running"],"outcome": st["outcome"],
@@ -1122,6 +1127,23 @@ def on_place_plant(data):
             allowed=range(0,3) if idx==0 else range(3,6)
         if r not in allowed: emit("action_result", {"status":"error","msg":"Не ваша зона"}); return
         if st["grid"][r][c] is not None: emit("action_result", {"status":"error","msg":"Занято"}); return
+        cell_right = (c + 1) * CELL_SIZE
+        block_threshold = cell_right - 0.4 * CELL_SIZE
+        for z in st.get("zombies", []):
+            if z.get("row") != r:
+                continue
+            try:
+                zx = float(z.get("x", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if int(zx // CELL_SIZE) != c:
+                continue
+            fly_until = z.get("flying_until_x")
+            if z.get("special") == "air" and fly_until is not None and zx > fly_until:
+                continue
+            if zx < block_threshold:
+                emit("action_result", {"status":"error","msg":"Зомби слишком близко"});
+                return
         if ptype not in PLANT_COSTS: emit("action_result", {"status":"error","msg":"Неизвестное растение"}); return
         cost=PLANT_COSTS[ptype]
         if st["suns"].get(username,0)<cost: emit("action_result", {"status":"error","msg":"Нет солнца"}); return
