@@ -19,6 +19,19 @@ const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
 const DEFAULT_ZOMBIE_DECK = DEFAULT_ZOMBIE_CLASSES.slice();
 
+const PLANT_HP_HINT={
+  sunflower:90,
+  peashooter:100,
+  wallnut:450,
+  freeze:130,
+  bomb:95,
+  icepea:100,
+  potato:55,
+  spikeweed:140,
+  tallnut:1100,
+  cabbage:100,
+};
+
 const PLANTS_ALL=[
   {key:'1', code:'peashooter', name:'Стрелок', icon:'🌱', cost:100},
   {key:'2', code:'sunflower',  name:'Подсолнух', icon:'🌻', cost:50},
@@ -782,7 +795,8 @@ function redrawDefender(){
       const x=c*80+8,y=r*80+8,w=80-16;
       const colors={sunflower:'#ffd700',peashooter:'#4ade80',wallnut:'#b08968',freeze:'#7dd3fc',bomb:'#ef4444', icepea:'#60a5fa', potato:'#a8a29e', spikeweed:'#16a34a', tallnut:'#92400e', cabbage:'#84cc16'};
       ctx.fillStyle=colors[cell.type]||'#000'; ctx.fillRect(x,y,w,w);
-      ctx.fillStyle='#065f46'; const maxhp=(cell.type==='tallnut'?1500:(cell.type==='wallnut'?600:300)); const hpw=Math.max(0,Math.min(1,cell.hp/maxhp))*w; ctx.fillRect(x,y-6,hpw,5);
+      const maxhp = cell.hp_max || PLANT_HP_HINT[cell.type] || 1;
+      ctx.fillStyle='#065f46'; const hpw=Math.max(0,Math.min(1,cell.hp/maxhp))*w; ctx.fillRect(x,y-6,hpw,5);
     }
   }
   ctx.fillStyle='#111'; st.bullets.forEach(b=>{ ctx.beginPath(); ctx.arc(b.x, b.row*80+40, 5, 0, Math.PI*2); ctx.fill(); });
@@ -833,7 +847,8 @@ function redrawZombie(){
       const x=c*80+8,y=r*80+8,w=80-16;
       const colors={sunflower:'#ffd700',peashooter:'#4ade80',wallnut:'#b08968',freeze:'#7dd3fc',bomb:'#ef4444', icepea:'#60a5fa', potato:'#a8a29e', spikeweed:'#16a34a', tallnut:'#92400e', cabbage:'#84cc16'};
       ctx.fillStyle=colors[cell.type]||'#000'; ctx.fillRect(x,y,w,w);
-      ctx.fillStyle='#065f46'; const maxhp=(cell.type==='tallnut'?1500:(cell.type==='wallnut'?600:300)); const hpw=Math.max(0,Math.min(1,cell.hp/maxhp))*w; ctx.fillRect(x,y-6,hpw,5);
+      const maxhp = cell.hp_max || PLANT_HP_HINT[cell.type] || 1;
+      ctx.fillStyle='#065f46'; const hpw=Math.max(0,Math.min(1,cell.hp/maxhp))*w; ctx.fillRect(x,y-6,hpw,5);
     }
   }
   ctx.fillStyle='#111'; st.bullets.forEach(b=>{ ctx.beginPath(); ctx.arc(b.x, b.row*80+40, 5, 0, Math.PI*2); ctx.fill(); });

@@ -23,8 +23,8 @@ SUNFLOWER_PERIOD = 5.0
 
 PLANT_COSTS = {"sunflower":50,"peashooter":100,"wallnut":50,"freeze":150,"bomb":200,
                "icepea":140,"potato":25,"spikeweed":70,"tallnut":125,"cabbage":160}
-PLANT_HP = {"sunflower":120,"peashooter":120,"wallnut":600,"freeze":160,"bomb":100,
-            "icepea":120,"potato":60,"spikeweed":180,"tallnut":1500,"cabbage":120}
+PLANT_HP = {"sunflower":90,"peashooter":100,"wallnut":450,"freeze":130,"bomb":95,
+            "icepea":100,"potato":55,"spikeweed":140,"tallnut":1100,"cabbage":100}
 PEA_DAMAGE = 20
 BULLET_SPEED = 150  # slower projectiles
 
@@ -581,7 +581,9 @@ def step_game(room,dt):
 def snapshot(room, me):
     st = room.get("game")
     if not st: return None
-    small_grid=[[None if not cell else {"type":cell["type"],"hp":int(cell["hp"])} for cell in row] for row in st["grid"]]
+    small_grid=[[None if not cell else {"type":cell["type"],"hp":int(cell["hp"]),
+                                         "hp_max":int(PLANT_HP.get(cell["type"], cell["hp"]))}
+                 for cell in row] for row in st["grid"]]
     mode = st.get("mode") or room.get("mode")
     role = "defender" if mode != "pvp" else "observer"
     if st.get("defender") == me:
