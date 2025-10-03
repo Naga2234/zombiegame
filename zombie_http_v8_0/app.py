@@ -51,8 +51,19 @@ ZOMBIE_CARD_LIBRARY = {
     "boss": {"name": "Босс", "cost": 120, "cooldown": 25.0},
 }
 
-ZOMBIE_PACK_UNLOCKS = {
-    "zombies_pack": ["cone","bucket","fast","swarm","kamikaze","cart","screamer","shield","regen","air"]
+ZOMBIE_CLASS_ICONS = {
+    "normal": "🧟",
+    "cone": "🪖",
+    "bucket": "🪣",
+    "fast": "⚡",
+    "swarm": "👣",
+    "kamikaze": "💥",
+    "cart": "🛒",
+    "screamer": "📢",
+    "shield": "🛡️",
+    "regen": "➕",
+    "air": "🎈",
+    "boss": "👑",
 }
 
 ZOMBIE_POINT_RATE = 6.0
@@ -695,16 +706,27 @@ def api_profile():
     return jsonify({"status":"ok","best":best,"recent":recent,"profile":sanitized_profile(u)})
 
 # ---- Store ----
-STORE_ITEMS = [
-    {"item":"icepea","type":"plant","price":20,"name":"Ледяной (Ice Pea)","icon":"🧊"},
-    {"item":"cabbage","type":"plant","price":25,"name":"Капуст. пушка","icon":"🥬"},
-    {"item":"spikeweed","type":"plant","price":18,"name":"Шипы","icon":"🌵"},
-    {"item":"tallnut","type":"plant","price":30,"name":"Толст. орех","icon":"🧱"},
-    {"item":"potato","type":"plant","price":12,"name":"Картоф. мина","icon":"🥔"},
-    {"item":"freeze","type":"plant","price":28,"name":"Заморозка","icon":"❄️"},
-    {"item":"bomb","type":"plant","price":35,"name":"Бомба","icon":"💣"},
-    {"item":"zombies_pack","type":"zombie","price":99,"name":"Пак зомби","icon":"🧟","unlocks":ZOMBIE_PACK_UNLOCKS.get("zombies_pack",[])}
-]
+STORE_ITEMS = {
+    "plants": [
+        {"item":"icepea","type":"plant","price":20,"name":"Ледяной (Ice Pea)","icon":"🧊"},
+        {"item":"cabbage","type":"plant","price":25,"name":"Капуст. пушка","icon":"🥬"},
+        {"item":"spikeweed","type":"plant","price":18,"name":"Шипы","icon":"🌵"},
+        {"item":"tallnut","type":"plant","price":30,"name":"Толст. орех","icon":"🧱"},
+        {"item":"potato","type":"plant","price":12,"name":"Картоф. мина","icon":"🥔"},
+        {"item":"freeze","type":"plant","price":28,"name":"Заморозка","icon":"❄️"},
+        {"item":"bomb","type":"plant","price":35,"name":"Бомба","icon":"💣"},
+    ],
+    "zombies": [
+        {
+            "item": code,
+            "type": "zombie",
+            "price": data.get("cost", 30),
+            "name": data.get("name", code),
+            "icon": ZOMBIE_CLASS_ICONS.get(code, "🧟"),
+        }
+        for code, data in ZOMBIE_CARD_LIBRARY.items()
+    ]
+}
 
 @app.route("/api/store")
 def api_store():
@@ -712,18 +734,25 @@ def api_store():
     users=load_users()
     info=normalize_user_record(users.get(u, {})) if u else normalize_user_record({})
     owned=set(info.get("owned",[]))
-    items=[]
-    for it in STORE_ITEMS:
-        meta = {**it,"owned": it["item"] in owned}
-        unlock = ZOMBIE_PACK_UNLOCKS.get(it["item"])
-        if unlock:
-            meta["unlocks"] = unlock
-            meta["owned"] = meta["owned"] or set(unlock).issubset(set(info.get("zombie_classes",[])))
-        items.append(meta)
+    zombie_classes=set(info.get("zombie_classes", []))
+    plant_items=[]
+    for it in STORE_ITEMS["plants"]:
+        meta = {**it, "owned": it["item"] in owned}
+        plant_items.append(meta)
+    zombie_items=[]
+    for it in STORE_ITEMS["zombies"]:
+        meta = {**it, "owned": it["item"] in zombie_classes}
+        zombie_items.append(meta)
     coins = int(info.get("coins",0))
-    return jsonify({"status":"ok","coins":coins,"items":items,
-                    "zombie_classes":info.get("zombie_classes",[]),
-                    "zombie_deck":info.get("zombie_deck",[])})
+    return jsonify({
+        "status": "ok",
+        "coins": coins,
+        "plants": plant_items,
+        "zombies": zombie_items,
+        "owned": sorted(owned),
+        "zombie_classes": info.get("zombie_classes", []),
+        "zombie_deck": info.get("zombie_deck", []),
+    })
 
 @app.route("/api/buy", methods=["POST"])
 def api_buy():
@@ -732,27 +761,28 @@ def api_buy():
     item=(data.get("item") or "").strip()
     users=load_users()
     if u not in users: return jsonify({"status":"error","msg":"Пользователь не найден"}),404
-    info = next((x for x in STORE_ITEMS if x["item"]==item), None)
+    plant_info = next((x for x in STORE_ITEMS["plants"] if x["item"]==item), None)
+    zombie_info = next((x for x in STORE_ITEMS["zombies"] if x["item"]==item), None)
+    info = plant_info or zombie_info
     if not info: return jsonify({"status":"error","msg":"Товар не найден"}),404
     rec = normalize_user_record(users[u])
     if info.get("type")!="zombie" and item in rec.get("owned",[]):
+        return jsonify({"status":"error","msg":"Уже куплено"}),400
+    if info.get("type")=="zombie" and item in rec.get("zombie_classes", []):
         return jsonify({"status":"error","msg":"Уже куплено"}),400
     price=int(info["price"])
     if rec.get("coins",0) < price:
         return jsonify({"status":"error","msg":"Не хватает монет"}),400
     rec["coins"] = rec.get("coins",0) - price
     if info.get("type") == "zombie":
-        unlock = ZOMBIE_PACK_UNLOCKS.get(item, [])
         classes=set(rec.get("zombie_classes",[]))
-        classes.update(unlock)
+        classes.add(item)
         rec["zombie_classes"] = sorted(classes)
-        rec.setdefault("owned", DEFAULT_PLANT_OWNED[:])
-        if item not in rec["owned"]:
-            rec["owned"].append(item)
     else:
         rec.setdefault("owned", DEFAULT_PLANT_OWNED[:])
         if item not in rec["owned"]:
             rec["owned"].append(item)
+    rec = normalize_user_record(rec)
     users[u]=rec
     save_users(users)
     return jsonify({"status":"ok","coins":rec["coins"],"profile":sanitized_profile(u)})
