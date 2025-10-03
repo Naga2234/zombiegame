@@ -358,7 +358,15 @@ def step_game(room,dt):
                 queue.pop(0)
             else:
                 break
-        if not st.get("wave_ready", True):
+        if st.get("wave_ready", True):
+            if attacker:
+                bonus = ZOMBIE_WAVE_BONUS + max(0, st.get("wave_number",1)-1)*10
+                st["zombie_points"] = st.get("zombie_points",0.0) + bonus
+            st["wave_ready"] = False
+            st["wave_cd"] = ZOMBIE_WAVE_COOLDOWN
+            st["wave_number"] = st.get("wave_number",1) + 1
+            socketio.emit("chat", {"user":"system","text":f"Зомби готовят волну {st['wave_number']}!"}, to=room["id"])
+        else:
             st["wave_cd"] = max(0.0, st.get("wave_cd",0.0) - dt)
             if st["wave_cd"] <= 0:
                 st["wave_cd"]=0.0
@@ -961,25 +969,6 @@ def on_spawn_zombie_manual(data):
         if ztype not in st.get("zombie_deck",[]):
             return
         st.setdefault("pending_manual",[]).append({"type":ztype,"row":row})
-
-@socketio.on("trigger_wave")
-def on_trigger_wave(data):
-    username=(data.get("username") or "").strip()
-    room_id=(data.get("room_id") or "").strip()
-    with rooms_lock:
-        r=rooms.get(room_id)
-        if not r or not r.get("started"): return
-        st=r.get("game")
-        if not st or st.get("mode")!="pvp" or st.get("attacker")!=username:
-            return
-        if not st.get("wave_ready", True):
-            return
-        bonus = ZOMBIE_WAVE_BONUS + max(0, st.get("wave_number",1)-1)*10
-        st["zombie_points"] = st.get("zombie_points",0.0) + bonus
-        st["wave_ready"]=False
-        st["wave_cd"]=ZOMBIE_WAVE_COOLDOWN
-        st["wave_number"]=st.get("wave_number",1)+1
-        socketio.emit("chat", {"user":"system","text":f"Зомби готовят волну {st['wave_number']}!"}, to=room_id)
 
 @socketio.on("next_wave")
 def on_next_wave(data):

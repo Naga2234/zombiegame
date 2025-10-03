@@ -630,7 +630,6 @@ function renderZombieGame(){
     <div class="sep"></div>
     <div><b>Дека</b></div>
     <div id="zDeck" class="grid"></div>
-    <div class="row"><button id="waveBtn" class="btn" onclick="triggerWave()">🚨 Запустить волну</button></div>
     <div class="sep"></div>
     <button class="btn" onclick="leaveRoom()">Выйти в лобби</button>`;
   main.innerHTML = `<div>
@@ -691,14 +690,17 @@ function updateZombieHUD(){
   const wave=document.getElementById('zWave'); if(wave && GAME_STATE) wave.textContent=GAME_STATE.wave_number||1;
   const cd=document.getElementById('waveCd');
   if(cd){
-    if(GAME_STATE && !GAME_STATE.wave_ready){ cd.textContent=`Перезарядка волны: ${Math.ceil(GAME_STATE.wave_cd||0)}c`; }
-    else cd.textContent='';
+    if(GAME_STATE){
+      if(GAME_STATE.wave_ready){
+        cd.textContent='Волна готова!';
+      } else {
+        cd.textContent=`Перезарядка волны: ${Math.ceil(GAME_STATE.wave_cd||0)}c`;
+      }
+    } else {
+      cd.textContent='';
+    }
   }
-  const btn=document.getElementById('waveBtn');
-  if(btn){ btn.disabled=!(GAME_STATE && GAME_STATE.wave_ready); }
 }
-
-function triggerWave(){ if(!ROOM_ID) return; socket.emit('trigger_wave',{room_id:ROOM_ID, username:USER}); }
 function pageCount(){ return Math.max(1, Math.ceil(PLANTS.length/24)); }
 function buildInventory(){
   const inv=document.getElementById('inventory'); if(!inv) return;
