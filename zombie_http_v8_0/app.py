@@ -1057,6 +1057,42 @@ def on_transfer_sun(data):
             st["suns"][dst]=st["suns"].get(dst,0.0)+amt
             socketio.emit("chat", {"user":"system","text":f"{src} передал {int(amt)} солнца игроку {dst}"}, to=room_id)
 
+@socketio.on("sell_plant")
+def on_sell_plant(data):
+    rid=(data.get("room_id") or "").strip()
+    username=(data.get("username") or "").strip()
+    r=int(data.get("row", -1))
+    c=int(data.get("col", -1))
+    ptype=(data.get("ptype") or "").strip()
+    with rooms_lock:
+        room=rooms.get(rid)
+        if not room or not room.get("started") or not room.get("game"):
+            emit("action_result", {"status":"error","msg":"Игра не идёт"}); return
+        if not (0 <= r < ROWS and 0 <= c < COLS):
+            emit("action_result", {"status":"error","msg":"Неверные координаты"}); return
+        st=room["game"]
+        cell=st["grid"][r][c]
+        if not cell:
+            emit("action_result", {"status":"error","msg":"На клетке нет растения"}); return
+        owner=cell.get("owner")
+        if owner != username:
+            emit("action_result", {"status":"error","msg":"Вы не владелец растения"}); return
+        actual_type=cell.get("type")
+        if not actual_type:
+            emit("action_result", {"status":"error","msg":"Нельзя продать это"}); return
+        if ptype and ptype != actual_type:
+            emit("action_result", {"status":"error","msg":"Несовпадение данных"}); return
+        if actual_type not in PLANT_COSTS:
+            emit("action_result", {"status":"error","msg":"Неизвестное растение"}); return
+        refund=max(0, PLANT_COSTS[actual_type]//2)
+        st["grid"][r][c]=None
+        st["suns"][username]=st["suns"].get(username,0)+refund
+        emit("action_result", {"status":"sold","refund":refund,"sun":int(st["suns"][username]),
+                                 "msg":f"Продажа: +{refund}"})
+        for u in room.get("players", []):
+            payload={"room_id": rid, "state": snapshot(room, u), "target": u}
+            socketio.emit("state_update", payload, to=f"user:{u}")
+
 @socketio.on("place_plant")
 def on_place_plant(data):
     rid=data.get("room_id"); username=(data.get("username") or "").strip()
