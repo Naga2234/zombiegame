@@ -11,9 +11,6 @@ let CURRENT_Z_CARD=null;
 let ZOMBIE_POINTS=0;
 let ZOMBIE_DECK=[];
 let ZOMBIE_COOLDOWNS={};
-let AVAILABLE_ZOMBIES=[];
-let LOBBY_Z_DECK=[];
-let LOBBY_DECK_NOTICE='';
 let SHOP_TAB='plants';
 let SHOP_DATA=null;
 
@@ -100,7 +97,6 @@ function applyZombieDefaults(profile){
   if(!profile) return;
   profile.zombie_classes = mergeDefaultZombieClasses(profile.zombie_classes);
   profile.zombie_deck = normalizeZombieDeckList(profile.zombie_deck, profile.zombie_classes);
-  AVAILABLE_ZOMBIES = profile.zombie_classes.slice();
 }
 
 function md5(s){return CryptoJS.MD5(s.toLowerCase().trim()).toString()}
@@ -215,7 +211,6 @@ function buyItem(item){
         applyZombieDefaults(PROFILE);
         PROFILE.owned=Array.isArray(PROFILE.owned)?PROFILE.owned:[];
         PROFILE.zombie_classes=Array.isArray(PROFILE.zombie_classes)?PROFILE.zombie_classes:[];
-        AVAILABLE_ZOMBIES=PROFILE.zombie_classes.slice();
         PROFILE.coins=j.coins ?? PROFILE.coins;
         updateOwnedPlants();
       }
@@ -306,13 +301,6 @@ socket.on('wave_cleared', (p)=>{
     const s=document.getElementById('status');
     if(s) s.textContent = `Волна ${p.wave} завершена! Ждём напарника...`;
   }
-});
-socket.on('deck_saved', (payload={})=>{
-  if(payload.deck && PROFILE){
-    PROFILE.zombie_deck=payload.deck.slice();
-    LOBBY_Z_DECK=payload.deck.slice();
-  }
-  if(VIEW==='room' && ROOM_CACHE && ROOM_CACHE.mode==='pvp'){ buildLobbyDeck(ROOM_CACHE, true); }
 });
 socket.on('profile_sync', (payload={})=>{
   if(!payload.profile){ return; }
@@ -429,8 +417,7 @@ function renderRoom(){
       <button class="btn" onclick="rematch()"><span>🔁</span> Реванш</button>
     </div>
     <div class="row"><button class="btn" onclick="leaveRoom()"><span>⬅️</span> Выйти</button></div>
-    <div id="roleControls" class="row"></div>
-    <div id="deckLobby" class="row"></div>`;
+    <div id="roleControls" class="row"></div>`;
   main.innerHTML = `<div style="display:flex;gap:16px; width:980px">
     <div style="flex:1">
       <h3>Состав</h3><div id="players"></div><div class="sep"></div><div id="countdown" class="muted"></div>
@@ -463,7 +450,7 @@ function drawRoomInfo(r){
     else if(r.assigned.attacker===USER) MY_INDEX=1;
   }
   if(r.started && VIEW!=='game'){ setView('game'); }
-  if(r.mode==='pvp'){ buildRoleControls(r); buildLobbyDeck(r, true); }
+  if(r.mode==='pvp'){ buildRoleControls(r); }
 }
 
 function roleIcon(code){
@@ -491,74 +478,6 @@ function buildRoleControls(r){
 
 function selectRole(role){ if(!ROOM_ID) return; socket.emit('select_role',{room_id:ROOM_ID, username:USER, role}); }
 
-function buildLobbyDeck(r, reset=false){
-  const wrap=document.getElementById('deckLobby');
-  if(!wrap){ return; }
-  if(r.mode!=='pvp'){ wrap.innerHTML=''; return; }
-  const available=mergeDefaultZombieClasses(PROFILE?.zombie_classes||[]).filter(z=>ZOMBIE_LIBRARY[z]);
-  AVAILABLE_ZOMBIES=available.slice();
-  const fromRoom=(r.zombie_decks&&r.zombie_decks[USER]&&r.zombie_decks[USER].length)?r.zombie_decks[USER]:null;
-  let base=(fromRoom || PROFILE?.zombie_deck || DEFAULT_ZOMBIE_DECK).slice(0,6).filter(z=>available.includes(z));
-  if(!base.length){
-    base=DEFAULT_ZOMBIE_DECK.filter(z=>available.includes(z));
-  }
-  if(reset){
-    if(base.join(',')!==LOBBY_Z_DECK.join(',')){
-      LOBBY_Z_DECK=base.slice();
-    }
-  } else if(!LOBBY_Z_DECK.length){
-    LOBBY_Z_DECK=base.slice();
-  } else {
-    LOBBY_Z_DECK=LOBBY_Z_DECK.filter(z=>available.includes(z)).slice(0,6);
-    if(!LOBBY_Z_DECK.length){
-      LOBBY_Z_DECK=base.slice();
-    }
-  }
-  if(LOBBY_Z_DECK.length>6){
-    LOBBY_Z_DECK=LOBBY_Z_DECK.slice(0,6);
-  }
-  const cards = available.map(z=>{
-    const info=ZOMBIE_LIBRARY[z];
-    const selected=LOBBY_Z_DECK.includes(z);
-    const cls=selected?' selected':'';
-    return `<button type="button" class="card${cls}" data-zombie="${z}">
-      <div class="icon">${info?.icon||'🧟'}</div>
-      <div><div>${info?.name||z}</div><div class="muted">${info?.cost||0} очк.</div></div>
-    </button>`;
-  }).join('');
-  const message = LOBBY_DECK_NOTICE;
-  LOBBY_DECK_NOTICE='';
-  wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">
-    <div><b>Дека зомби</b></div>
-    <div class="muted" aria-live="polite">&nbsp;</div>
-    <div id="deckMsg" class="muted" style="min-height:18px;color:${message?'#ef4444':'var(--muted)'}">${message||''}</div>
-    <div id="deckCards" class="grid">${cards || '<div class="muted">Нет доступных классов</div>'}</div>
-    <div><button class="btn primary" onclick="saveDeck()" ${available.length?'' :'disabled'}>Сохранить деку</button></div>
-  </div>`;
-  const grid=document.getElementById('deckCards');
-  if(grid){
-    grid.onclick=(ev)=>{
-      const btn=ev.target.closest('button.card');
-      if(!btn) return;
-      const code=btn.getAttribute('data-zombie');
-      if(!AVAILABLE_ZOMBIES.includes(code)) return;
-      const idx=LOBBY_Z_DECK.indexOf(code);
-      if(idx>=0){
-        LOBBY_Z_DECK.splice(idx,1);
-      }else{
-        if(LOBBY_Z_DECK.length>=6){
-          LOBBY_DECK_NOTICE='Можно выбрать не более 6 классов.';
-          buildLobbyDeck(r);
-          return;
-        }
-        LOBBY_Z_DECK.push(code);
-      }
-      buildLobbyDeck(r);
-    };
-  }
-}
-
-function saveDeck(){ if(!ROOM_ID) return; socket.emit('set_zombie_deck',{room_id:ROOM_ID, username:USER, deck:LOBBY_Z_DECK}); }
 function toggleReady(){ socket.emit('toggle_ready',{room_id:ROOM_ID, username:USER}); }
 function startGame(){ socket.emit('start',{room_id:ROOM_ID, username:USER}); }
 function rematch(){ socket.emit('rejoin',{room_id:ROOM_ID, username:USER}); }
