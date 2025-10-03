@@ -1,0 +1,30 @@
+{
+  "test1": {
+    "password": "",
+    "score": 1240,
+    "games_played": 2,
+    "games_won": 0,
+    "plants_placed": 0,
+    "coins": 56,
+    "owned": [
+      "peashooter",
+      "sunflower",
+      "wallnut"
+    ]
+  },
+  "99999": {
+    "password": "",
+    "score": 1240,
+    "games_played": 2,
+    "games_won": 0,
+    "plants_placed": 0,
+    "coins": 5,
+    "owned": [
+      "peashooter",
+      "sunflower",
+      "wallnut",
+      "freeze",
+      "bomb"
+    ]
+  }
+}

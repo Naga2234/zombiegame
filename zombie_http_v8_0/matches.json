@@ -1,0 +1,24 @@
+[
+  {
+    "room_id": "1",
+    "players": [
+      "test1",
+      "99999"
+    ],
+    "score": 1220,
+    "outcome": "lose",
+    "duration": 390,
+    "ended_at": 1759479049
+  },
+  {
+    "room_id": "1",
+    "players": [
+      "99999",
+      "test1"
+    ],
+    "score": 20,
+    "outcome": "lose",
+    "duration": 35,
+    "ended_at": 1759479213
+  }
+]
