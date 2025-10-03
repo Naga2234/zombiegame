@@ -4,6 +4,7 @@ let USER=null, PROFILE=null, ROOM_ID=null, MY_INDEX=0, VIEW='auth', CURRENT='pea
 let GAME_STATE=null, SUN_NOW=999, HOME_TIMER=null, HOVER_CELL=null;
 let ROOM_CACHE=null, COUNTDOWN_TIMER=null, COUNTDOWN_LEFT=0;
 let INV_PAGE=0;
+let PENDING_ACTIONS=[];
 
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 
@@ -111,6 +112,24 @@ socket.on('room_deleted', (payload)=>{
     alert('Комната удалена (все игроки вышли).');
     ROOM_ID=null; localStorage.removeItem('ROOM_ID'); setView('home'); listRooms();
   } else { if(VIEW==='home') listRooms(); }
+});
+socket.on('action_result', (payload={})=>{
+  const pending = PENDING_ACTIONS.length ? PENDING_ACTIONS.shift() : null;
+  if(payload.status==='ok'){
+    if(pending && pending.type==='place'){
+      SUN_NOW = Math.max(0, SUN_NOW - (pending.cost||0));
+      if(GAME_STATE){ GAME_STATE.sun = SUN_NOW; if(VIEW==='game') redraw(); }
+      else if(VIEW==='game'){ highlightInventory(); }
+    }
+    const s=document.getElementById('status'); if(s) s.textContent='';
+  } else {
+    if(payload.msg){ setStatus(payload.msg); }
+    else { setStatus('Действие не выполнено'); }
+    if(VIEW==='game'){
+      if(GAME_STATE){ redraw(); }
+      else { highlightInventory(); }
+    }
+  }
 });
 socket.on('chat', (m)=>{
   const box=document.getElementById('chatBox'); if(!box) return;
@@ -296,6 +315,7 @@ function renderGame(){
     const p=PLANTS.find(x=>x.code===CURRENT); if(!p) return;
     if(SUN_NOW < p.cost){ setStatus('Недостаточно солнца'); return; }
     if(!canPlace(r,c)){ setStatus('Недоступная клетка'); return; }
+    PENDING_ACTIONS.push({type:'place', plant:CURRENT, cost:p.cost});
     socket.emit('place_plant',{room_id:ROOM_ID,username:USER,row:r,col:c,ptype:CURRENT});
   });
 }
