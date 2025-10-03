@@ -141,6 +141,12 @@ def normalize_user_record(data:dict):
         if code in allowed and code not in used:
             filtered.append(code)
             used.add(code)
+    for code in cleaned:
+        if len(filtered)>=6:
+            break
+        if code in allowed and code not in used:
+            filtered.append(code)
+            used.add(code)
     data["zombie_deck"]=filtered[:6]
     return data
 
@@ -817,7 +823,14 @@ def api_buy():
     rec = normalize_user_record(rec)
     users[u]=rec
     save_users(users)
-    if info.get("type") != "zombie":
+    if info.get("type") == "zombie":
+        updated_deck = list(rec.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:]))[:6]
+        with rooms_lock:
+            for room in rooms.values():
+                if u in room.get("players", []):
+                    decks = room.setdefault("zombie_decks", {})
+                    decks[u] = list(updated_deck)
+    else:
         updated_owned = set(rec.get("owned", DEFAULT_PLANT_OWNED[:]))
         with rooms_lock:
             for room in rooms.values():
