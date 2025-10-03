@@ -40,7 +40,9 @@
   .icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
   .badge{font-size:12px;padding:2px 6px;border-radius:8px;border:1px solid var(--border);background:#fff}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px}
-  .modal > .box{background:#fff;border-radius:14px;min-width:320px;max-width:520px;padding:16px;border:1px solid var(--border)}
+  .modal > .box{background:#fff;border-radius:14px;min-width:320px;max-width:520px;max-height:90vh;padding:16px;border:1px solid var(--border);overflow-y:auto}
+  #shopBox{display:flex;flex-direction:column;gap:8px}
+  .shop-items{max-height:60vh;overflow-y:auto;padding-right:4px}
   .avatar{width:28px;height:28px;border-radius:999px;vertical-align:middle;margin-right:8px}
 </style>
 </head>
