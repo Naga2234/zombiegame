@@ -544,7 +544,7 @@ def snapshot(room, me):
     if not st: return None
     small_grid=[[None if not cell else {"type":cell["type"],"hp":int(cell["hp"])} for cell in row] for row in st["grid"]]
     mode = st.get("mode") or room.get("mode")
-    role = "observer"
+    role = "defender" if mode != "pvp" else "observer"
     if st.get("defender") == me:
         role = "defender"
     elif st.get("attacker") == me:
