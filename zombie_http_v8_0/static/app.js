@@ -81,6 +81,22 @@ function openProfile(name){
 }
 function closeProfile(){ profileModal.style.display='none'; }
 
+function updateOwnedPlants(){
+  const ownedList = Array.isArray(PROFILE?.owned) ? PROFILE.owned : [];
+  const allowed = new Set([...DEFAULT_OWNED, ...ownedList]);
+  const filtered = PLANTS_ALL.filter(p=>allowed.has(p.code));
+  PLANTS = filtered.length ? filtered : PLANTS_ALL.filter(p=>DEFAULT_OWNED.includes(p.code));
+  if(!PLANTS.some(p=>p.code===CURRENT)){
+    CURRENT = PLANTS[0]?.code || 'peashooter';
+  }
+  const totalPages = Math.max(1, Math.ceil(PLANTS.length/24));
+  if(INV_PAGE >= totalPages){ INV_PAGE = totalPages-1; }
+  if(INV_PAGE < 0){ INV_PAGE = 0; }
+  if(document.getElementById('inventory')){
+    buildInventory();
+  }
+}
+
 function openShop(){
   shopModal.style.display='flex';
   const box=document.getElementById('shopBox'); box.textContent='Загрузка...';
@@ -94,9 +110,8 @@ function openShop(){
       PROFILE.zombie_classes=j.zombie_classes||PROFILE.zombie_classes||[];
       PROFILE.zombie_deck=j.zombie_deck||PROFILE.zombie_deck||[];
       AVAILABLE_ZOMBIES = PROFILE.zombie_classes||[];
+      updateOwnedPlants();
     }
-    // Filter plant list in UI by ownership
-    PLANTS = PLANTS_ALL.filter(p=> owned.includes(p.code) || DEFAULT_OWNED.includes(p.code));
     const html = [`<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>`].concat(items.map(it=>{
       const ownedClass = it.type==='zombie' ? (it.owned ? '✅ Доступно' : '') : '';
       const btn = it.owned ? '✅ Куплено' : `<button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button>`;
@@ -111,7 +126,7 @@ function openShop(){
 function buyItem(item){
   API('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:USER,item})}).then(j=>{
     if(j.status==='ok'){
-      if(PROFILE && j.profile){ PROFILE=j.profile; AVAILABLE_ZOMBIES=PROFILE.zombie_classes||[]; }
+      if(PROFILE && j.profile){ PROFILE=j.profile; AVAILABLE_ZOMBIES=PROFILE.zombie_classes||[]; updateOwnedPlants(); }
       openShop(); buildInventory();
     }
     else{ alert('Покупка не удалась: '+(j.msg||'')); }
@@ -205,6 +220,15 @@ socket.on('deck_saved', (payload={})=>{
   }
   if(VIEW==='room' && ROOM_CACHE && ROOM_CACHE.mode==='pvp'){ buildLobbyDeck(ROOM_CACHE, true); }
 });
+socket.on('profile_sync', (payload={})=>{
+  if(!payload.profile){ return; }
+  PROFILE=payload.profile||{};
+  PROFILE.zombie_classes = PROFILE.zombie_classes||['normal'];
+  PROFILE.zombie_deck = PROFILE.zombie_deck||['normal'];
+  PROFILE.owned = PROFILE.owned||[];
+  AVAILABLE_ZOMBIES = PROFILE.zombie_classes.slice();
+  updateOwnedPlants();
+});
 
 function startCountdownTicker(){
   if(COUNTDOWN_TIMER) return;
@@ -249,6 +273,7 @@ async function signin(){
     PROFILE.zombie_classes = PROFILE.zombie_classes||['normal'];
     PROFILE.zombie_deck = PROFILE.zombie_deck||['normal'];
     AVAILABLE_ZOMBIES = PROFILE.zombie_classes.slice();
+    updateOwnedPlants();
     localStorage.setItem('USER', USER);
     setView('home'); listRooms();
   } else document.getElementById('authMsg').textContent='Ошибка: '+(j.msg||' ');
