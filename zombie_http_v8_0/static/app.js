@@ -16,6 +16,8 @@ let LOBBY_Z_DECK=[];
 let LOBBY_DECK_NOTICE='';
 
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
+const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
+const DEFAULT_ZOMBIE_DECK = DEFAULT_ZOMBIE_CLASSES.slice();
 
 const PLANTS_ALL=[
   {key:'1', code:'peashooter', name:'Стрелок', icon:'🌱', cost:100},
@@ -53,6 +55,52 @@ const modal = document.getElementById('createModal');
 const profileModal = document.getElementById('profileModal');
 const shopModal = document.getElementById('shopModal');
 
+function mergeDefaultZombieClasses(list){
+  const arr = Array.isArray(list) ? list : [];
+  const seen = new Set();
+  const merged = [];
+  [...DEFAULT_ZOMBIE_CLASSES, ...arr].forEach(code=>{
+    if(ZOMBIE_LIBRARY[code] && !seen.has(code)){
+      seen.add(code);
+      merged.push(code);
+    }
+  });
+  return merged;
+}
+
+function normalizeZombieDeckList(deck, available){
+  const availSet = new Set(available);
+  const arr = Array.isArray(deck) ? deck : [];
+  const result = [];
+  arr.forEach(code=>{
+    if(availSet.has(code) && ZOMBIE_LIBRARY[code] && !result.includes(code)){
+      result.push(code);
+    }
+  });
+  if(!result.length){
+    DEFAULT_ZOMBIE_DECK.forEach(code=>{
+      if(availSet.has(code) && !result.includes(code) && ZOMBIE_LIBRARY[code]){
+        result.push(code);
+      }
+    });
+  } else {
+    DEFAULT_ZOMBIE_DECK.forEach(code=>{
+      if(result.length>=6) return;
+      if(availSet.has(code) && !result.includes(code) && ZOMBIE_LIBRARY[code]){
+        result.push(code);
+      }
+    });
+  }
+  return result.slice(0,6);
+}
+
+function applyZombieDefaults(profile){
+  if(!profile) return;
+  profile.zombie_classes = mergeDefaultZombieClasses(profile.zombie_classes);
+  profile.zombie_deck = normalizeZombieDeckList(profile.zombie_deck, profile.zombie_classes);
+  AVAILABLE_ZOMBIES = profile.zombie_classes.slice();
+}
+
 function md5(s){return CryptoJS.MD5(s.toLowerCase().trim()).toString()}
 function avatarUrl(name){ return `https://www.gravatar.com/avatar/${md5(name)}?d=identicon`; }
 
@@ -66,9 +114,7 @@ function openProfile(name){
   box.innerHTML = 'Загрузка...';
   API('/api/profile?u='+encodeURIComponent(name)).then(j=>{
     PROFILE=j.profile||{};
-    PROFILE.zombie_classes=PROFILE.zombie_classes||['normal'];
-    PROFILE.zombie_deck=PROFILE.zombie_deck||['normal'];
-    AVAILABLE_ZOMBIES = PROFILE.zombie_classes.slice();
+    applyZombieDefaults(PROFILE);
     const recent = (j.recent||[]).map(m=>`<li>Счёт: ${m.score}, Итог: ${m.outcome}, Время: ${m.duration}s</li>`).join('');
     box.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
       <img class="avatar" src="${avatarUrl(name)}&s=42" style="width:42px;height:42px"/>
@@ -109,7 +155,7 @@ function openShop(){
       PROFILE.owned=owned;
       PROFILE.zombie_classes=j.zombie_classes||PROFILE.zombie_classes||[];
       PROFILE.zombie_deck=j.zombie_deck||PROFILE.zombie_deck||[];
-      AVAILABLE_ZOMBIES = PROFILE.zombie_classes||[];
+      applyZombieDefaults(PROFILE);
       updateOwnedPlants();
     }
     const html = [`<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>`].concat(items.map(it=>{
@@ -223,10 +269,8 @@ socket.on('deck_saved', (payload={})=>{
 socket.on('profile_sync', (payload={})=>{
   if(!payload.profile){ return; }
   PROFILE=payload.profile||{};
-  PROFILE.zombie_classes = PROFILE.zombie_classes||['normal'];
-  PROFILE.zombie_deck = PROFILE.zombie_deck||['normal'];
   PROFILE.owned = PROFILE.owned||[];
-  AVAILABLE_ZOMBIES = PROFILE.zombie_classes.slice();
+  applyZombieDefaults(PROFILE);
   updateOwnedPlants();
 });
 
@@ -270,9 +314,7 @@ async function signin(){
   const j=await API('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
   if(j.status==='ok'){
     USER=u; PROFILE=j.profile||{};
-    PROFILE.zombie_classes = PROFILE.zombie_classes||['normal'];
-    PROFILE.zombie_deck = PROFILE.zombie_deck||['normal'];
-    AVAILABLE_ZOMBIES = PROFILE.zombie_classes.slice();
+    applyZombieDefaults(PROFILE);
     updateOwnedPlants();
     localStorage.setItem('USER', USER);
     setView('home'); listRooms();
@@ -405,10 +447,13 @@ function buildLobbyDeck(r, reset=false){
   const wrap=document.getElementById('deckLobby');
   if(!wrap){ return; }
   if(r.mode!=='pvp'){ wrap.innerHTML=''; return; }
-  const available=(PROFILE?.zombie_classes||['normal']).filter(z=>ZOMBIE_LIBRARY[z]);
+  const available=mergeDefaultZombieClasses(PROFILE?.zombie_classes||[]).filter(z=>ZOMBIE_LIBRARY[z]);
   AVAILABLE_ZOMBIES=available.slice();
   const fromRoom=(r.zombie_decks&&r.zombie_decks[USER]&&r.zombie_decks[USER].length)?r.zombie_decks[USER]:null;
-  const base=(fromRoom || PROFILE?.zombie_deck || ['normal']).slice(0,6);
+  let base=(fromRoom || PROFILE?.zombie_deck || DEFAULT_ZOMBIE_DECK).slice(0,6).filter(z=>available.includes(z));
+  if(!base.length){
+    base=DEFAULT_ZOMBIE_DECK.filter(z=>available.includes(z));
+  }
   if(reset){
     if(base.join(',')!==LOBBY_Z_DECK.join(',')){
       LOBBY_Z_DECK=base.slice();
@@ -416,7 +461,13 @@ function buildLobbyDeck(r, reset=false){
   } else if(!LOBBY_Z_DECK.length){
     LOBBY_Z_DECK=base.slice();
   } else {
-    LOBBY_Z_DECK=LOBBY_Z_DECK.filter(z=>available.includes(z));
+    LOBBY_Z_DECK=LOBBY_Z_DECK.filter(z=>available.includes(z)).slice(0,6);
+    if(!LOBBY_Z_DECK.length){
+      LOBBY_Z_DECK=base.slice();
+    }
+  }
+  if(LOBBY_Z_DECK.length>6){
+    LOBBY_Z_DECK=LOBBY_Z_DECK.slice(0,6);
   }
   const cards = available.map(z=>{
     const info=ZOMBIE_LIBRARY[z];
@@ -563,9 +614,13 @@ function renderZombieGame(){
 function buildZombieDeckUI(){
   const wrap=document.getElementById('zDeck');
   if(!wrap){ return; }
-  const deck=(GAME_STATE?.zombie_deck||PROFILE?.zombie_deck||[]).filter(z=>ZOMBIE_LIBRARY[z]);
+  const fallback=(PROFILE?.zombie_deck||DEFAULT_ZOMBIE_DECK).filter(z=>ZOMBIE_LIBRARY[z]);
+  const deck=(GAME_STATE?.zombie_deck||fallback).filter(z=>ZOMBIE_LIBRARY[z]);
   if(deck.length){ ZOMBIE_DECK=deck.slice(); }
-  if(!ZOMBIE_DECK.length) ZOMBIE_DECK=['normal'];
+  if(!ZOMBIE_DECK.length){
+    ZOMBIE_DECK=DEFAULT_ZOMBIE_DECK.filter(z=>ZOMBIE_LIBRARY[z]);
+    if(!ZOMBIE_DECK.length){ ZOMBIE_DECK=['normal']; }
+  }
   if(!CURRENT_Z_CARD || !ZOMBIE_DECK.includes(CURRENT_Z_CARD)) CURRENT_Z_CARD=ZOMBIE_DECK[0];
   wrap.innerHTML = ZOMBIE_DECK.map(z=>{
     const info=ZOMBIE_LIBRARY[z]||{};
