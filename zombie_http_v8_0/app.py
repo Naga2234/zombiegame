@@ -243,6 +243,7 @@ def init_game_state(room):
             "wave_done":[False, False],
             "await_next":False,
             "waves":[],
+            "weather": "clear",
             "owned_plants": owned_cache,
         }
         return
@@ -412,7 +413,7 @@ def step_game(room,dt):
             if not plant: continue
             ptype = plant["type"]; owner = plant.get("owner")
             if ptype=="sunflower":
-                rain_boost = 0.7 if st["weather"]=="rain" else 1.0
+                rain_boost = 0.7 if st.get("weather","clear")=="rain" else 1.0
                 key=f"{r},{c}"; last=st["sunflower_timers"].get(key,0.0)
                 # stop sunflower if half finished and awaiting
                 half = 0 if r<=2 else 1
@@ -426,7 +427,7 @@ def step_game(room,dt):
                 if plant["cd"]<=0:
                     px=c*CELL_SIZE+40
                     # fog reduces visibility
-                    sight = FIELD_WIDTH if st["weather"]!="fog" else 220
+                    sight = FIELD_WIDTH if st.get("weather","clear")!="fog" else 220
                     visible = any((z["row"]==r and z["x"]>px and (z["x"]-px)<=sight) for z in st["zombies"])
                     if visible:
                         if ptype=="peashooter":
