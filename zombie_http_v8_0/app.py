@@ -33,8 +33,8 @@ ZOMBIE_HP_BASE = 120
 ZOMBIE_DPS = 18
 
 DEFAULT_PLANT_OWNED = ["peashooter","sunflower","wallnut"]
-DEFAULT_ZOMBIE_CLASSES = ["normal"]
-DEFAULT_ZOMBIE_DECK = ["normal"]
+DEFAULT_ZOMBIE_CLASSES = ["normal", "cone", "bucket"]
+DEFAULT_ZOMBIE_DECK = DEFAULT_ZOMBIE_CLASSES[:]
 
 ZOMBIE_CARD_LIBRARY = {
     "normal": {"name": "Обычный", "cost": 20, "cooldown": 1.5},
@@ -93,8 +93,44 @@ def normalize_user_record(data:dict):
     data.setdefault("plants_placed",0)
     data.setdefault("coins",0)
     data.setdefault("owned", DEFAULT_PLANT_OWNED[:])
-    data.setdefault("zombie_classes", DEFAULT_ZOMBIE_CLASSES[:])
-    data.setdefault("zombie_deck", DEFAULT_ZOMBIE_DECK[:])
+
+    classes=data.get("zombie_classes")
+    if not isinstance(classes, list):
+        classes=[]
+    cleaned=[]
+    seen=set()
+    for code in classes:
+        if code in ZOMBIE_CARD_LIBRARY and code not in seen:
+            cleaned.append(code)
+            seen.add(code)
+    for code in DEFAULT_ZOMBIE_CLASSES:
+        if code not in seen and code in ZOMBIE_CARD_LIBRARY:
+            cleaned.append(code)
+            seen.add(code)
+    data["zombie_classes"]=cleaned
+
+    deck=data.get("zombie_deck")
+    if not isinstance(deck, list):
+        deck=[]
+    allowed=set(cleaned)
+    filtered=[]
+    used=set()
+    for code in deck:
+        if code in allowed and code in ZOMBIE_CARD_LIBRARY and code not in used:
+            filtered.append(code)
+            used.add(code)
+            if len(filtered)>=6:
+                break
+    if not filtered:
+        filtered=[code for code in DEFAULT_ZOMBIE_DECK if code in allowed][:6]
+        used=set(filtered)
+    for code in DEFAULT_ZOMBIE_DECK:
+        if len(filtered)>=6:
+            break
+        if code in allowed and code not in used:
+            filtered.append(code)
+            used.add(code)
+    data["zombie_deck"]=filtered[:6]
     return data
 
 def sanitized_profile(username:str):
@@ -158,6 +194,8 @@ def init_game_state(room):
         if attacker:
             deck = room.get("zombie_decks",{}).get(attacker) or DEFAULT_ZOMBIE_DECK[:]
             zombie_deck = [card for card in deck if card in ZOMBIE_CARD_LIBRARY]
+            if not zombie_deck:
+                zombie_deck = DEFAULT_ZOMBIE_DECK[:]
         room["game"] = {
             "mode":"pvp","grid":grid,"zombies":[],"bullets":[],
             "suns":suns,"coins":coins,
