@@ -751,19 +751,30 @@ function canPlace(r,c){
 }
 function drawGrid(ctx){
   const CELL=80;
+  const isPvP=(ROOM_CACHE?.mode)==='pvp';
   for(let r=0;r<6;r++){
     for(let c=0;c<9;c++){
-      const base=(r<3)?'#d9fbe5':'#e9f5ff';
-      ctx.fillStyle=(r+c)%2===0?base:'#eefbf1';
+      let base,alt,stroke;
+      if(isPvP){
+        base='#f4f1de';
+        alt='#ece5ce';
+        stroke='#d4cbb3';
+      } else {
+        base=(r<3)?'#d9fbe5':'#e9f5ff';
+        alt=(r<3)?'#c9f2d7':'#dcefff';
+        stroke='#a7d3a7';
+      }
+      ctx.fillStyle=(r+c)%2===0?base:alt;
       ctx.fillRect(c*CELL,r*CELL,CELL,CELL);
-      ctx.strokeStyle='#a7d3a7'; ctx.strokeRect(c*CELL,r*CELL,CELL,CELL);
+      ctx.strokeStyle=stroke; ctx.strokeRect(c*CELL,r*CELL,CELL,CELL);
     }
   }
-  ctx.fillStyle='#94a3b8'; ctx.fillRect(0, 3*80-2, 9*80, 4);
-  if(MY_ROLE!=='attacker'){
+  if(!isPvP){
+    ctx.fillStyle='#94a3b8'; ctx.fillRect(0, 3*80-2, 9*80, 4);
+  }
+  if(!isPvP && MY_ROLE!=='attacker'){
     ctx.fillStyle='rgba(96,165,250,0.15)';
-    if((ROOM_CACHE?.mode)==='pvp'){ ctx.fillRect(0,0,9*80,6*80); }
-    else if(MY_INDEX===0){ ctx.fillRect(0,0,9*80,3*80); }
+    if(MY_INDEX===0){ ctx.fillRect(0,0,9*80,3*80); }
     else { ctx.fillRect(0,3*80,9*80,3*80); }
   }
   ctx.fillStyle='#f5f5f5'; ctx.fillRect(9*80,0,220,6*80);
