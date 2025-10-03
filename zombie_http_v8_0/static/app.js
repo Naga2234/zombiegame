@@ -99,6 +99,23 @@ function applyZombieDefaults(profile){
   profile.zombie_deck = normalizeZombieDeckList(profile.zombie_deck, profile.zombie_classes);
 }
 
+function arraysEqual(a=[], b=[]){
+  if(!Array.isArray(a) || !Array.isArray(b) || a.length!==b.length) return false;
+  for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; }
+  return true;
+}
+
+function cooldownsEqual(a={}, b={}){
+  const mapA=a||{}; const mapB=b||{};
+  const keysA=Object.keys(mapA); const keysB=Object.keys(mapB);
+  if(keysA.length!==keysB.length) return false;
+  for(const key of keysA){
+    const va=Number(mapA[key])||0; const vb=Number(mapB[key])||0;
+    if(Math.abs(va-vb) > 0.0001) return false;
+  }
+  return true;
+}
+
 function md5(s){return CryptoJS.MD5(s.toLowerCase().trim()).toString()}
 function avatarUrl(name){ return `https://www.gravatar.com/avatar/${md5(name)}?d=identicon`; }
 
@@ -285,15 +302,29 @@ socket.on('state_update', (payload={})=>{
   if(!ROOM_ID || payload.room_id!==ROOM_ID) return;
   if(payload.target && payload.target!==USER) return;
   const st=payload.state; GAME_STATE=st;
+  const prevPoints=ZOMBIE_POINTS;
+  const prevCooldowns=ZOMBIE_COOLDOWNS;
+  const prevDeck=ZOMBIE_DECK.slice();
   SUN_NOW=st.sun;
-  ZOMBIE_POINTS=st.zombie_points||ZOMBIE_POINTS;
-  ZOMBIE_COOLDOWNS=st.zombie_cooldowns||{};
-  if(Array.isArray(st.zombie_deck)) ZOMBIE_DECK=st.zombie_deck.slice();
+  const nextPoints=(typeof st.zombie_points==='number') ? st.zombie_points : prevPoints;
+  const nextCooldowns=(st.zombie_cooldowns && typeof st.zombie_cooldowns==='object') ? {...st.zombie_cooldowns} : prevCooldowns||{};
+  let deckChanged=false;
+  if(Array.isArray(st.zombie_deck)){
+    const filtered=st.zombie_deck.filter(z=>ZOMBIE_LIBRARY[z]);
+    deckChanged=!arraysEqual(prevDeck, filtered);
+    if(deckChanged || !ZOMBIE_DECK.length){
+      ZOMBIE_DECK=filtered.slice();
+    }
+  }
+  const pointsChanged=(nextPoints!==prevPoints);
+  const cooldownChanged=!cooldownsEqual(prevCooldowns||{}, nextCooldowns||{});
+  ZOMBIE_POINTS=nextPoints;
+  ZOMBIE_COOLDOWNS=nextCooldowns||{};
   MY_ROLE=st.role||MY_ROLE;
   if(VIEW==='game'){
     if(CURRENT_ROLE_UI!==MY_ROLE){ renderGame(); return; }
     redraw();
-    if(MY_ROLE==='attacker'){ buildZombieDeckUI(); }
+    if(MY_ROLE==='attacker' && (pointsChanged || cooldownChanged || deckChanged)){ buildZombieDeckUI(); }
   }
 });
 socket.on('wave_cleared', (p)=>{
@@ -580,28 +611,74 @@ function renderZombieGame(){
 function buildZombieDeckUI(){
   const wrap=document.getElementById('zDeck');
   if(!wrap){ return; }
-  const fallback=(PROFILE?.zombie_deck||DEFAULT_ZOMBIE_DECK).filter(z=>ZOMBIE_LIBRARY[z]);
-  const deck=(GAME_STATE?.zombie_deck||fallback).filter(z=>ZOMBIE_LIBRARY[z]);
-  if(deck.length){ ZOMBIE_DECK=deck.slice(); }
-  if(!ZOMBIE_DECK.length){
-    ZOMBIE_DECK=DEFAULT_ZOMBIE_DECK.filter(z=>ZOMBIE_LIBRARY[z]);
-    if(!ZOMBIE_DECK.length){ ZOMBIE_DECK=['normal']; }
+  if(!wrap.dataset.listenerBound){
+    wrap.addEventListener('click',(ev)=>{
+      const btn=ev.target.closest('button[data-z]'); if(!btn) return;
+      const code=btn.getAttribute('data-z'); if(!ZOMBIE_DECK.includes(code)) return;
+      CURRENT_Z_CARD=code; buildZombieDeckUI();
+    });
+    wrap.dataset.listenerBound='1';
   }
+  const fallback=(PROFILE?.zombie_deck||DEFAULT_ZOMBIE_DECK).filter(z=>ZOMBIE_LIBRARY[z]);
+  let source=[];
+  if(Array.isArray(GAME_STATE?.zombie_deck)){
+    source=GAME_STATE.zombie_deck.filter(z=>ZOMBIE_LIBRARY[z]);
+  } else if(ZOMBIE_DECK.length){
+    source=ZOMBIE_DECK.filter(z=>ZOMBIE_LIBRARY[z]);
+  } else {
+    source=fallback;
+  }
+  if(!source.length){
+    source=DEFAULT_ZOMBIE_DECK.filter(z=>ZOMBIE_LIBRARY[z]);
+    if(!source.length){ source=['normal']; }
+  }
+  ZOMBIE_DECK=source.slice(0,6);
   if(!CURRENT_Z_CARD || !ZOMBIE_DECK.includes(CURRENT_Z_CARD)) CURRENT_Z_CARD=ZOMBIE_DECK[0];
-  wrap.innerHTML = ZOMBIE_DECK.map(z=>{
-    const info=ZOMBIE_LIBRARY[z]||{};
-    const cd=ZOMBIE_COOLDOWNS[z]||0;
-    const ready = cd<=0 && ZOMBIE_POINTS >= (info.cost||0);
-    const cls=`card${CURRENT_Z_CARD===z?' selected':''}${ready?'':' disabled'}`;
-    const label = cd>0 ? `${cd.toFixed(1)}s` : `${info.cost||0}`;
-    return `<button type="button" class="${cls}" data-z="${z}"><div class="icon">${info.icon||'🧟'}</div><div><div>${info.name||z}</div><div class="muted">${label}</div></div></button>`;
-  }).join('');
-  wrap.onclick=(ev)=>{
-    const btn=ev.target.closest('button'); if(!btn) return;
-    const code=btn.getAttribute('data-z'); if(!ZOMBIE_DECK.includes(code)) return;
-    CURRENT_Z_CARD=code; buildZombieDeckUI();
-  };
+  const existing=new Map(Array.from(wrap.children).map(btn=>[btn.getAttribute('data-z'), btn]));
+  ZOMBIE_DECK.forEach((code, idx)=>{
+    let btn=existing.get(code);
+    if(!btn){
+      btn=createZombieCardElement(code);
+    }
+    existing.delete(code);
+    const ref=wrap.children[idx];
+    if(ref!==btn){
+      wrap.insertBefore(btn, ref||null);
+    }
+    updateZombieCardElement(btn, code);
+  });
+  existing.forEach(btn=>btn.remove());
   updateZombieHUD();
+}
+
+function createZombieCardElement(code){
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.classList.add('card');
+  btn.setAttribute('data-z', code);
+  const icon=document.createElement('div'); icon.className='icon'; btn.appendChild(icon);
+  const text=document.createElement('div');
+  const name=document.createElement('div'); name.className='z-name'; text.appendChild(name);
+  const label=document.createElement('div'); label.className='muted z-label'; text.appendChild(label);
+  btn.appendChild(text);
+  return btn;
+}
+
+function updateZombieCardElement(btn, code){
+  btn.setAttribute('data-z', code);
+  btn.classList.add('card');
+  const info=ZOMBIE_LIBRARY[code]||{};
+  const cooldownRaw=Number(ZOMBIE_COOLDOWNS[code]||0);
+  const cd=Number.isFinite(cooldownRaw)?Math.max(0, cooldownRaw):0;
+  const ready = cd<=0 && ZOMBIE_POINTS >= (info.cost||0);
+  btn.classList.toggle('selected', CURRENT_Z_CARD===code);
+  btn.classList.toggle('disabled', !ready);
+  const icon=btn.querySelector('.icon'); if(icon) icon.textContent=info.icon||'🧟';
+  const name=btn.querySelector('.z-name'); if(name) name.textContent=info.name||code;
+  const label=btn.querySelector('.z-label'); if(label){
+    if(cd>0){ label.textContent=`${cd.toFixed(1)}s`; }
+    else { label.textContent=`${info.cost||0}`; }
+  }
 }
 
 function updateZombieHUD(){
