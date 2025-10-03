@@ -68,7 +68,7 @@ ZOMBIE_CLASS_ICONS = {
 
 ZOMBIE_POINT_RATE = 6.0
 ZOMBIE_WAVE_BONUS = 30
-ZOMBIE_WAVE_COOLDOWN = 15.0
+ZOMBIE_WAVE_COOLDOWN = 30.0
 
 # ---- Storage helpers ----
 def load_json(path, default):
