@@ -286,8 +286,9 @@ socket.on('chat', (m)=>{
   box.innerHTML += `<div class="${sys}"><b>${m.user}:</b> ${m.text}</div>`;
   box.scrollTop=box.scrollHeight;
 });
-socket.on('state_update', (payload)=>{
+socket.on('state_update', (payload={})=>{
   if(!ROOM_ID || payload.room_id!==ROOM_ID) return;
+  if(payload.target && payload.target!==USER) return;
   const st=payload.state; GAME_STATE=st;
   SUN_NOW=st.sun;
   ZOMBIE_POINTS=st.zombie_points||ZOMBIE_POINTS;
