@@ -431,7 +431,7 @@ function buildLobbyDeck(r, reset=false){
   LOBBY_DECK_NOTICE='';
   wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">
     <div><b>Дека зомби</b></div>
-    <div class="muted">Выберите до 6 классов для PvP. Выбрано: ${LOBBY_Z_DECK.length}/6.</div>
+    <div class="muted" aria-live="polite">&nbsp;</div>
     <div id="deckMsg" class="muted" style="min-height:18px;color:${message?'#ef4444':'var(--muted)'}">${message||''}</div>
     <div id="deckCards" class="grid">${cards || '<div class="muted">Нет доступных классов</div>'}</div>
     <div><button class="btn primary" onclick="saveDeck()" ${available.length?'' :'disabled'}>Сохранить деку</button></div>
