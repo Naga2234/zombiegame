@@ -142,10 +142,9 @@
 <div class="modal" id="profileModal">
   <div class="box">
     <div id="profileBox">Загрузка...</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-      <div><button class="btn" onclick="openShop()"><span>🛒</span> Магазин</button></div>
-      <div><button class="btn" onclick="logout()"><span>🚪</span> Выйти</button>
-      <button class="btn" onclick="closeProfile()">Закрыть</button></div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:8px;gap:8px">
+      <button class="btn" onclick="logout()"><span>🚪</span> Выйти</button>
+      <button class="btn" onclick="closeProfile()">Закрыть</button>
     </div>
   </div>
 </div>
@@ -155,6 +154,14 @@
     <h3>Магазин</h3>
     <div id="shopBox" class="muted">Загрузка...</div>
     <div style="text-align:right;margin-top:8px"><button class="btn" onclick="closeShop()">Закрыть</button></div>
+  </div>
+</div>
+
+<div class="modal" id="craftModal">
+  <div class="box">
+    <h3>Крафт</h3>
+    <div id="craftBox" class="muted">Здесь пока пусто...</div>
+    <div style="text-align:right;margin-top:8px"><button class="btn" onclick="closeCraft()">Закрыть</button></div>
   </div>
 </div>
 

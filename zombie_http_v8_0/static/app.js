@@ -87,6 +87,7 @@ const navbar = document.getElementById('navbar');
 const modal = document.getElementById('createModal');
 const profileModal = document.getElementById('profileModal');
 const shopModal = document.getElementById('shopModal');
+const craftModal = document.getElementById('craftModal');
 
 function debounce(fn, delay=300){
   let timer;
@@ -416,6 +417,18 @@ function buyItem(item){
 }
 function closeShop(){ shopModal.style.display='none'; }
 
+function openCraft(){
+  if(craftModal){
+    craftModal.style.display='flex';
+  }
+}
+
+function closeCraft(){
+  if(craftModal){
+    craftModal.style.display='none';
+  }
+}
+
 function logout(){ localStorage.removeItem('USER'); USER=null; closeProfile(); setView('auth'); }
 
 socket.on('connected', ()=>{
@@ -566,8 +579,17 @@ function stopCountdownTicker(){ if(COUNTDOWN_TIMER){ clearInterval(COUNTDOWN_TIM
 function render(){
   document.body.classList.toggle('auth-view', VIEW==='auth');
   if(USER){
-    navbar.innerHTML = `<span style="cursor:pointer" onclick="openProfile('${USER}')"><img class="avatar" src="${avatarUrl(USER)}&s=24" style="width:24px;height:24px"/> <b>${USER}</b></span>`;
-  }else{ navbar.textContent = 'Гость'; }
+    navbar.classList.remove('muted');
+    const profileHtml = `<span style="cursor:pointer" onclick="openProfile('${USER}')"><img class="avatar" src="${avatarUrl(USER)}&s=24" style="width:24px;height:24px"/> <b>${USER}</b></span>`;
+    navbar.innerHTML = `
+      <button class="btn" onclick="openCraft()"><span>🧪</span> Крафт</button>
+      <button class="btn" onclick="openShop()"><span>🛒</span> Магазин</button>
+      ${profileHtml}
+    `;
+  }else{
+    navbar.classList.add('muted');
+    navbar.textContent = 'Гость';
+  }
   if(VIEW==='auth'){ renderAuth(); return; }
   if(VIEW==='home'){ renderHome(); return; }
   if(VIEW==='room'){ renderRoom(); return; }
