@@ -14,6 +14,8 @@ let ZOMBIE_COOLDOWNS={};
 let SHOP_TAB='plants';
 let SHOP_DATA=null;
 let PLANT_COOLDOWN_UNTIL=0;
+let PROFILE_INV_TAB='plants';
+let PROFILE_VIEW=null;
 
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
@@ -46,6 +48,7 @@ const PLANTS_ALL=[
 ];
 let PLANTS=PLANTS_ALL.slice(); // filtered by ownership later
 const PLANT_COST_MAP = PLANTS_ALL.reduce((acc, item)=>{ acc[item.code]=item.cost; return acc; }, {});
+const PLANT_INFO_MAP = PLANTS_ALL.reduce((acc, item)=>{ acc[item.code]=item; return acc; }, {});
 
 const ZOMBIE_LIBRARY={
   normal:{name:'Обычный',icon:'🧟',cost:20,cooldown:1.5},
@@ -141,19 +144,118 @@ function closeModal(){ modal.style.display='none'; }
 function openProfile(name){
   profileModal.style.display='flex';
   const box=document.getElementById('profileBox');
-  box.innerHTML = 'Загрузка...';
+  if(box){ box.innerHTML = 'Загрузка...'; }
+  PROFILE_VIEW=null;
   API('/api/profile?u='+encodeURIComponent(name)).then(j=>{
     PROFILE=j.profile||{};
     applyZombieDefaults(PROFILE);
-    const recent = (j.recent||[]).map(m=>`<li>Счёт: ${m.score}, Итог: ${m.outcome}, Время: ${m.duration}s</li>`).join('');
-    box.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
-      <img class="avatar" src="${avatarUrl(name)}&s=42" style="width:42px;height:42px"/>
-      <div><b>${name}</b><div class="muted">Очки: ${PROFILE.score||0} · Победы: ${PROFILE.games_won||0} · Матчей: ${PROFILE.games_played||0} · Монеты: ${PROFILE.coins||0}</div></div>
+    PROFILE_INV_TAB='plants';
+    PROFILE_VIEW={
+      username:name,
+      best:j.best||0,
+      recent:Array.isArray(j.recent)?j.recent:[],
+    };
+    renderProfileBox();
+  }).catch(()=>{
+    if(box){ box.textContent='Не удалось загрузить профиль'; }
+  });
+}
+
+function renderProfileBox(){
+  const box=document.getElementById('profileBox');
+  if(!box) return;
+  if(!PROFILE_VIEW){ return; }
+  const profileData = PROFILE||{};
+  const username = PROFILE_VIEW.username||'Игрок';
+  const bestScore = PROFILE_VIEW.best||0;
+  const statsLine = `Очки: ${profileData.score||0} · Победы: ${profileData.games_won||0} · Матчей: ${profileData.games_played||0} · Монеты: ${profileData.coins||0}`;
+  const tabsHtml = `<div class="profile-tabs">
+    <button class="btn ${PROFILE_INV_TAB==='plants'?'primary':''}" onclick="setProfileInvTab('plants')">Растения</button>
+    <button class="btn ${PROFILE_INV_TAB==='zombies'?'primary':''}" onclick="setProfileInvTab('zombies')">Зомби</button>
+  </div>`;
+  const recentHtml = renderProfileRecent(PROFILE_VIEW.recent);
+  const inventoryHtml = renderProfileInventory();
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px">
+      <img class="avatar" src="${avatarUrl(username)}&s=42" style="width:42px;height:42px"/>
+      <div><b>${username}</b><div class="muted">${statsLine}</div></div>
     </div>
     <div class="sep"></div>
-    <div>Лучший счёт: <b>${j.best||0}</b></div>
-    <div style="margin-top:6px"><b>Последние матчи:</b><ul>${recent||'<li>Пока нет</li>'}</ul></div>`;
-  });
+    <div>Лучший счёт: <b>${bestScore}</b></div>
+    <div class="sep"></div>
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <b>Инвентарь</b>
+        ${tabsHtml}
+      </div>
+      <div style="margin-top:8px">${inventoryHtml}</div>
+    </div>
+    <div class="sep"></div>
+    <div><b>Последние матчи:</b></div>
+    ${recentHtml}
+  `;
+}
+
+function renderProfileRecent(list){
+  if(!Array.isArray(list) || !list.length){
+    return '<div class="muted">Пока нет</div>';
+  }
+  return `<ul>${list.map(m=>{
+    if(!m) return '<li>Матч</li>';
+    const score = typeof m.score!=='undefined' ? m.score : 0;
+    const outcome = m.outcome || '—';
+    const duration = typeof m.duration==='number' ? `${m.duration}s` : (m.duration || '—');
+    return `<li>Счёт: ${score}, Итог: ${outcome}, Время: ${duration}</li>`;
+  }).join('')}</ul>`;
+}
+
+function renderProfileInventory(){
+  const data = PROFILE_INV_TAB==='zombies' ? renderProfileZombieInventory() : renderProfilePlantInventory();
+  if(data.empty){
+    return `<div class="muted">${data.empty}</div>`;
+  }
+  return `<div class="inventory-grid">${data.html}</div>`;
+}
+
+function renderProfilePlantInventory(){
+  const owned = Array.isArray(PROFILE?.owned) ? PROFILE.owned : [];
+  if(!owned.length){
+    return {empty:'Нет растений', html:''};
+  }
+  const html = owned.map(code=>{
+    const info = PLANT_INFO_MAP[code]||{};
+    const icon = info.icon || '🌿';
+    const name = info.name || code;
+    const cost = typeof info.cost==='number' ? `<div class="muted">Стоимость: ${info.cost}</div>` : '';
+    return `<div class="card"><div class="icon">${icon}</div><div><div><b>${name}</b></div><div class="muted">${code}</div>${cost}</div></div>`;
+  }).join('');
+  return {html};
+}
+
+function renderProfileZombieInventory(){
+  const zombies = Array.isArray(PROFILE?.zombie_classes) ? PROFILE.zombie_classes : [];
+  if(!zombies.length){
+    return {empty:'Нет зомби-классов', html:''};
+  }
+  const html = zombies.map(code=>{
+    const info = ZOMBIE_LIBRARY[code]||{};
+    const icon = info.icon || '🧟';
+    const name = info.name || code;
+    const details = [
+      typeof info.cost==='number' ? `Очки: ${info.cost}` : '',
+      typeof info.cooldown==='number' ? `Кд: ${info.cooldown}s` : '',
+    ].filter(Boolean).join(' · ');
+    const detailsHtml = details ? `<div class="muted">${details}</div>` : '';
+    return `<div class="card"><div class="icon">${icon}</div><div><div><b>${name}</b></div><div class="muted">${code}</div>${detailsHtml}</div></div>`;
+  }).join('');
+  return {html};
+}
+
+function setProfileInvTab(tab){
+  const next = tab==='zombies' ? 'zombies' : 'plants';
+  if(PROFILE_INV_TAB===next) return;
+  PROFILE_INV_TAB=next;
+  renderProfileBox();
 }
 function closeProfile(){ profileModal.style.display='none'; }
 
@@ -227,6 +329,7 @@ function openShop(tab){
       if(Array.isArray(j.zombie_deck)) PROFILE.zombie_deck=j.zombie_deck;
       applyZombieDefaults(PROFILE);
       updateOwnedPlants();
+      renderProfileBox();
     }
     renderShop();
   }).catch(()=>{
@@ -245,6 +348,7 @@ function buyItem(item){
         PROFILE.zombie_classes=Array.isArray(PROFILE.zombie_classes)?PROFILE.zombie_classes:[];
         PROFILE.coins=j.coins ?? PROFILE.coins;
         updateOwnedPlants();
+        renderProfileBox();
       }
       openShop(prevTab);
       buildInventory();
@@ -387,6 +491,7 @@ socket.on('profile_sync', (payload={})=>{
   PROFILE.owned = PROFILE.owned||[];
   applyZombieDefaults(PROFILE);
   updateOwnedPlants();
+  renderProfileBox();
 });
 
 function startCountdownTicker(){
