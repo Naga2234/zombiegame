@@ -764,6 +764,17 @@ def api_register():
     save_users(users)
     return jsonify({"status":"ok"})
 
+@app.route("/api/check_username")
+def api_check_username():
+    name=(request.args.get("username") or "").strip()
+    err=validate_username(name)
+    if err:
+        return jsonify({"available": False, "msg": err})
+    users=load_users()
+    if name in users:
+        return jsonify({"available": False, "msg": "Пользователь уже существует"})
+    return jsonify({"available": True, "msg": "Логин свободен"})
+
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data=request.json or {}
