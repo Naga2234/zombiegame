@@ -212,6 +212,28 @@ function renderProfileInventory(){
     ...item,
     quantity: Number(resourceCounts[item.code])||0,
   })).filter(item=>item.quantity>0);
+  const prettyName=(code='')=>code.replace(/_/g,' ').replace(/\b\w/g,ch=>ch.toUpperCase());
+  const fallbackItems=[];
+  Object.keys(PROFILE||{}).forEach(key=>{
+    if(!key || !key.startsWith('resource_')) return;
+    const rawVal=PROFILE[key];
+    const parsed=Number(rawVal);
+    if(!Number.isFinite(parsed) || parsed<=0) return;
+    const code=key.slice('resource_'.length);
+    if(!code) return;
+    if(resourceItems.some(item=>item.code===code)) return;
+    const meta=RESOURCE_META_MAP[code]||{};
+    fallbackItems.push({
+      code,
+      name: meta.name || prettyName(code),
+      icon: meta.icon || '📦',
+      description: meta.description || '',
+      quantity: parsed,
+    });
+  });
+  if(fallbackItems.length){
+    resourceItems.push(...fallbackItems);
+  }
   let html='';
   if(PROFILE_INV_TAB==='zombies'){
     html = zombieItems.length ? zombieItems.map(item=>{
