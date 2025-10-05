@@ -168,8 +168,10 @@ function renderProfileInventory(){
   if(!listEl) return;
   const plantBtn=document.getElementById('profileTabPlants');
   const zombieBtn=document.getElementById('profileTabZombies');
+  const resourceBtn=document.getElementById('profileTabResources');
   if(plantBtn){ plantBtn.classList.toggle('primary', PROFILE_INV_TAB==='plants'); }
   if(zombieBtn){ zombieBtn.classList.toggle('primary', PROFILE_INV_TAB==='zombies'); }
+  if(resourceBtn){ resourceBtn.classList.toggle('primary', PROFILE_INV_TAB==='resources'); }
   const ownedPlantsRaw = Array.isArray(PROFILE.owned) ? PROFILE.owned : [];
   const plantSet = new Set([...DEFAULT_OWNED, ...ownedPlantsRaw]);
   const plantItems = Array.from(plantSet).map(code=>{
@@ -197,6 +199,48 @@ function renderProfileInventory(){
       cooldown: typeof meta.cooldown==='number' ? meta.cooldown : null,
     };
   });
+  const resourceConfig=[
+    {key:'coins', label:'Монеты', icon:'🪙'},
+    {key:'plants_placed', label:'Посажено растений', icon:'🌿'},
+    {key:'score', label:'Очки', icon:'⭐'},
+    {key:'games_played', label:'Матчей сыграно', icon:'🎮'},
+    {key:'games_won', label:'Побед', icon:'🏆'},
+  ];
+  const resourceSeen=new Set();
+  const resourceItems=[];
+  resourceConfig.forEach(cfg=>{
+    const rawVal = PROFILE[cfg.key];
+    const value = typeof rawVal==='number' ? rawVal : Number(rawVal);
+    if(Number.isFinite(value)){
+      resourceItems.push({
+        key: cfg.key,
+        name: cfg.label,
+        icon: cfg.icon || '📊',
+        value,
+      });
+      resourceSeen.add(cfg.key);
+    }
+  });
+  Object.keys(PROFILE||{}).forEach(key=>{
+    if(resourceSeen.has(key)) return;
+    const rawVal = PROFILE[key];
+    if(typeof rawVal==='number' && Number.isFinite(rawVal)){
+      const prettyName = key.split('_').map(w=>w ? w[0].toUpperCase()+w.slice(1) : '').join(' ').trim() || key;
+      resourceItems.push({
+        key,
+        name: prettyName,
+        icon:'📊',
+        value: rawVal,
+      });
+      resourceSeen.add(key);
+    }
+  });
+  const formatNumber=(val)=>{
+    if(typeof val==='number' && Number.isFinite(val)){
+      return val.toLocaleString('ru-RU');
+    }
+    return val;
+  };
   let html='';
   if(PROFILE_INV_TAB==='zombies'){
     html = zombieItems.length ? zombieItems.map(item=>{
@@ -205,6 +249,12 @@ function renderProfileInventory(){
       const extra = costPart || cdPart ? `<div class="profile-item-sub">${costPart}${cdPart}</div>` : '';
       return `<div class="profile-item"><div class="profile-item-icon">${item.icon}</div><div><div class="profile-item-title">${item.name}</div>${extra}</div></div>`;
     }).join('') : '<div class="muted">Нет доступных классов зомби</div>';
+  } else if(PROFILE_INV_TAB==='resources'){
+    html = resourceItems.length ? resourceItems.map(item=>{
+      const valueText = formatNumber(item.value);
+      const extra = valueText!=null ? `<div class="profile-item-sub">${valueText}</div>` : '';
+      return `<div class="profile-item"><div class="profile-item-icon">${item.icon}</div><div><div class="profile-item-title">${item.name}</div>${extra}</div></div>`;
+    }).join('') : '<div class="muted">Нет доступных ресурсов</div>';
   } else {
     html = plantItems.length ? plantItems.map(item=>{
       const extra = item.cost!=null ? `<div class="profile-item-sub">Стоимость: ${item.cost}</div>` : '';
@@ -215,8 +265,9 @@ function renderProfileInventory(){
 }
 
 function setProfileInvTab(tab){
-  if(PROFILE_INV_TAB===tab) return;
-  PROFILE_INV_TAB=tab;
+  if(PROFILE_INV_TAB!==tab){
+    PROFILE_INV_TAB=tab;
+  }
   renderProfileInventory();
 }
 
@@ -242,6 +293,7 @@ function openProfile(name){
       <div class="profile-tabs">
         <button id="profileTabPlants" class="btn ${PROFILE_INV_TAB==='plants'?'primary':''}" onclick="setProfileInvTab('plants')">Растения</button>
         <button id="profileTabZombies" class="btn ${PROFILE_INV_TAB==='zombies'?'primary':''}" onclick="setProfileInvTab('zombies')">Зомби</button>
+        <button id="profileTabResources" class="btn ${PROFILE_INV_TAB==='resources'?'primary':''}" onclick="setProfileInvTab('resources')">Ресурсы</button>
       </div>
       <div id="profileInventoryList" class="profile-inventory-list"><div class="muted">Загрузка...</div></div>
     </div>`;
