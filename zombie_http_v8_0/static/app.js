@@ -611,8 +611,7 @@ function renderDefenderGame(isPvP){
     const rect=cvs.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
     if(x>9*80) return; const c=Math.floor(x/80), r=Math.floor(y/80);
     const cellData=(GAME_STATE?.grid?.[r]||[])[c];
-    if(e.shiftKey){
-      if(!cellData){ setStatus('Здесь нет растения для продажи'); return; }
+    if(cellData){
       const plantType=cellData?.type;
       if(!plantType){ setStatus('Нельзя продать неизвестное растение'); return; }
       PENDING_ACTIONS.push({type:'sell', row:r, col:c, ptype:plantType});
