@@ -255,6 +255,8 @@ def init_game_state(room):
             "weather": random_weather(),
             "owned_plants": owned_cache,
             "plant_cooldowns": {u:0.0 for u in players},
+            "wave_total": 0,
+            "wave_remaining": 0,
         }
         return
 
@@ -280,6 +282,7 @@ def init_game_state(room):
     coins = {u:0 for u in room["players"]}
 
     room["game"] = {
+        "mode":mode,
         "grid":grid,"zombies":[],"bullets":[],
         "suns":suns,"coins":coins,
         "score":0,"running":True,
@@ -292,6 +295,8 @@ def init_game_state(room):
         "weather": roll_weather(1),
         "owned_plants": owned_cache,
         "plant_cooldowns": {u:0.0 for u in room["players"]},
+        "wave_total": len(pending),
+        "wave_remaining": len(pending),
     }
 
 def spawn_zombie(room, typ="normal", half=None, row=None):
@@ -332,11 +337,32 @@ def spawn_zombie(room, typ="normal", half=None, row=None):
     else: z=mk()
 
     st["zombies"].append(z)
+    if (st.get("mode") or room.get("mode")) != "pvp":
+        update_wave_progress(st)
+
+def update_wave_progress(st):
+    if (st.get("mode") or "coop") == "pvp":
+        st["wave_total"] = 0
+        st["wave_remaining"] = 0
+        return
+    pending = len(st.get("wave_pending") or [])
+    alive = len(st.get("zombies") or [])
+    total = st.get("wave_total")
+    if total is None:
+        total = pending + alive
+    else:
+        total = max(int(total), pending + alive)
+    remaining = pending + alive
+    st["wave_total"] = int(total)
+    st["wave_remaining"] = max(0, min(int(total), remaining))
 
 def build_next_wave(st, players):
     idx = st["wave_number"]
     if idx >= len(st["waves"]):
-        st["outcome"]="win"; st["running"]=False; return
+        st["outcome"]="win"; st["running"]=False
+        st["wave_total"] = 0
+        st["wave_remaining"] = 0
+        return
     spec = st["waves"][idx]
     pending = []
     for typ, cnt in spec["spawn"]:
@@ -351,6 +377,8 @@ def build_next_wave(st, players):
     st["wave_done"]=[False,False]
     st["await_next"]=False
     st["weather"]=roll_weather(st["wave_number"])
+    st["wave_total"] = len(pending)
+    st["wave_remaining"] = len(pending)
     # ensure sun dict includes all current players
     for u in players:
         st["suns"].setdefault(u, 150)
@@ -568,6 +596,8 @@ def step_game(room,dt):
         if z["x"]<0 and st["outcome"] is None:
             st["outcome"] = "lose"; st["running"]=False
 
+    update_wave_progress(st)
+
     # wave completion check per half
     if mode != "pvp" and not st["wave_pending"]:
         any0 = any((0<=z["row"]<=2) for z in st["zombies"])
@@ -604,6 +634,8 @@ def snapshot(room, me):
             "wave_number": st.get("wave_number",1),
             "await_next": st.get("await_next", False),
             "wave_done": st.get("wave_done", [False, False]),
+            "wave_total": int(st.get("wave_total", 0) or 0),
+            "wave_remaining": max(0, int(st.get("wave_remaining", 0) or 0)),
             "coins": int(st.get("coins",{}).get(me,0)),
             "weather": st.get("weather","clear"),
             "role": role,

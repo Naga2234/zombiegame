@@ -845,6 +845,12 @@ function redrawDefender(){
   const zoneLabel = (ROOM_CACHE?.mode)==='pvp' ? 'все' : (MY_INDEX===0?'0-2':'3-5');
   ctx.fillText('Зона: '+zoneLabel, 9*80+10, 96);
   ctx.fillText('Волна: '+st.wave_number+'  Погода: '+st.weather, 9*80+10, 120);
+  const waveTotal = Number.isFinite(Number(st.wave_total)) ? Math.max(0, Math.trunc(Number(st.wave_total))) : 0;
+  const waveRemainingRaw = Number.isFinite(Number(st.wave_remaining)) ? Math.trunc(Number(st.wave_remaining)) : 0;
+  const waveRemaining = Math.max(0, waveRemainingRaw);
+  if(waveTotal>0 || waveRemaining>0){
+    ctx.fillText('Осталось зомби: '+waveRemaining+' из '+Math.max(waveTotal, waveRemaining), 9*80+10, 144);
+  }
   if(st.await_next){
     const btn=document.getElementById('nextWaveBtn');
     if(btn){ let can=false; if(ROOM_CACHE && ROOM_CACHE.owner){ can=(ROOM_CACHE.owner===USER); } else { can=true; } btn.disabled=!can; }
@@ -894,6 +900,13 @@ function redrawZombie(){
   ctx.fillText('Очки: '+Math.floor(ZOMBIE_POINTS||0), 9*80+10, 24);
   ctx.fillText('Волна: '+(st.wave_number||1), 9*80+10, 48);
   ctx.fillText('Погода: '+st.weather, 9*80+10, 72);
+  const totalRaw = Number.isFinite(Number(st.wave_total)) ? Math.trunc(Number(st.wave_total)) : 0;
+  const remainRaw = Number.isFinite(Number(st.wave_remaining)) ? Math.trunc(Number(st.wave_remaining)) : 0;
+  const remain = Math.max(0, remainRaw);
+  const total = Math.max(0, totalRaw);
+  if(total>0 || remain>0){
+    ctx.fillText('Осталось зомби: '+remain+' из '+Math.max(total, remain), 9*80+10, 96);
+  }
   if(HOVER_CELL){
     ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.strokeRect(HOVER_CELL.c*80+2, HOVER_CELL.r*80+2, 80-4, 80-4);
   }
