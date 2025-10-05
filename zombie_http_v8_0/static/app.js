@@ -471,6 +471,41 @@ function updateAuthStatusUI(){
   }
 }
 
+function evaluatePasswordStrength(password=''){
+  const value=String(password||'');
+  if(!value){
+    return {score:0,label:'Введите пароль'};
+  }
+  let score=0;
+  if(value.length>=4) score++;
+  if(value.length>=8) score++;
+  if(/[a-z]/.test(value) && /[A-Z]/.test(value)) score++;
+  if(/\d/.test(value)) score++;
+  if(/[^A-Za-z0-9]/.test(value)) score++;
+  score=Math.min(score,4);
+  const labels=['Очень слабый','Слабый','Средний','Хороший','Сильный'];
+  return {score,label:labels[score]};
+}
+
+function updatePasswordStrengthUI(password=''){
+  const indicator=document.getElementById('passStrength');
+  if(!indicator) return;
+  const {score,label}=evaluatePasswordStrength(password);
+  const classes=['level-0','level-1','level-2','level-3','level-4'];
+  indicator.classList.toggle('is-empty', !password);
+  classes.forEach(cls=>indicator.classList.remove(cls));
+  indicator.classList.add(classes[score]||'level-0');
+  const bar=indicator.querySelector('.pass-strength__bar');
+  const text=indicator.querySelector('.pass-strength__label');
+  if(bar){
+    const percent=score===0 && !password ? 0 : (score/4)*100;
+    bar.style.width = `${percent}%`;
+  }
+  if(text){
+    text.textContent = password ? label : 'Введите пароль';
+  }
+}
+
 function initAuthControls(){
   USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
   updateAuthStatusUI();
@@ -478,6 +513,12 @@ function initAuthControls(){
   if(!loginInput) return;
   loginInput.addEventListener('input', ()=>scheduleUsernameCheck(loginInput.value));
   scheduleUsernameCheck(loginInput.value);
+  const passInput=document.getElementById('pass');
+  if(passInput){
+    const handler=()=>updatePasswordStrengthUI(passInput.value);
+    passInput.addEventListener('input', handler);
+    updatePasswordStrengthUI(passInput.value);
+  }
 }
 
 function renderAuth(){
@@ -485,6 +526,10 @@ function renderAuth(){
   <div class="row"><input id="login" placeholder="Логин (латиница/цифры ._-)" /></div>
   <div class="muted" id="loginStatus"></div>
   <div class="row"><input id="pass" type="password" placeholder="Пароль (мин. 4 символа)" /></div>
+  <div id="passStrength" class="pass-strength level-0 is-empty">
+    <div class="pass-strength__track"><div class="pass-strength__bar"></div></div>
+    <div class="pass-strength__label muted">Введите пароль</div>
+  </div>
   <div class="row"><button id="registerBtn" class="btn" onclick="register()"><span>📝</span> Регистрация</button>
   <button class="btn primary" onclick="signin()"><span>🔑</span> Вход</button></div>
   <div class="muted" id="authMsg"></div>`;

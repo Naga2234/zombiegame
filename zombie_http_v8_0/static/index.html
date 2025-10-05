@@ -44,6 +44,17 @@
   #shopBox{display:flex;flex-direction:column;gap:8px}
   .shop-items{max-height:60vh;overflow-y:auto;padding-right:4px}
   .avatar{width:28px;height:28px;border-radius:999px;vertical-align:middle;margin-right:8px}
+  .pass-strength{margin:6px 0 12px;transition:all .25s ease}
+  .pass-strength__track{width:100%;height:8px;border-radius:999px;background:var(--border);overflow:hidden}
+  .pass-strength__bar{height:100%;width:0%;background:var(--bad);transition:width .25s ease,background .25s ease}
+  .pass-strength__label{margin-top:4px;font-size:12px;color:var(--muted);transition:color .25s ease}
+  .pass-strength.is-empty .pass-strength__bar{width:0%}
+  .pass-strength.level-1 .pass-strength__bar{background:#f97316}
+  .pass-strength.level-2 .pass-strength__bar{background:#facc15}
+  .pass-strength.level-3 .pass-strength__bar{background:var(--accent)}
+  .pass-strength.level-4 .pass-strength__bar{background:var(--good)}
+  .pass-strength.level-3 .pass-strength__label,
+  .pass-strength.level-4 .pass-strength__label{color:var(--text)}
 </style>
 </head>
 <body>
