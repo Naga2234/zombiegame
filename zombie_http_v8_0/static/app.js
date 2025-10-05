@@ -1102,7 +1102,7 @@ function canPlace(r,c){
   if(!GAME_STATE) return false;
   if(GAME_STATE.grid[r][c]) return false;
   const cellRight=(c+1)*80;
-  const threshold=cellRight - 0.4*80;
+  const threshold=cellRight - 0.3*80;
   if(Array.isArray(GAME_STATE.zombies)){
     for(const z of GAME_STATE.zombies){
       if(!z || z.row!==r) continue;
