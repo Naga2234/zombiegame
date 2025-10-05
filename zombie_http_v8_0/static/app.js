@@ -74,6 +74,13 @@ const ZOMBIE_LIBRARY={
   boss:{name:'Босс',icon:'👑',cost:120,cooldown:25}
 };
 
+const RESOURCE_ITEMS=[
+  {code:'fertilizer',name:'Удобрение',icon:'🧪',amount:5,description:'Ускоряет рост растений'},
+  {code:'sun_boost',name:'Солнечный заряд',icon:'☀️',amount:15,description:'Доп. запас солнечной энергии'},
+  {code:'repair_kit',name:'Ремкомплект',icon:'🧰',amount:3,description:'Материалы для укрепления защит'},
+];
+const RESOURCE_META_MAP = RESOURCE_ITEMS.reduce((acc,item)=>{acc[item.code]=item; return acc;},{});
+
 const left = document.getElementById('leftPanel');
 const main = document.getElementById('mainPanel');
 const navbar = document.getElementById('navbar');
@@ -168,8 +175,10 @@ function renderProfileInventory(){
   if(!listEl) return;
   const plantBtn=document.getElementById('profileTabPlants');
   const zombieBtn=document.getElementById('profileTabZombies');
+  const resourceBtn=document.getElementById('profileTabResources');
   if(plantBtn){ plantBtn.classList.toggle('primary', PROFILE_INV_TAB==='plants'); }
   if(zombieBtn){ zombieBtn.classList.toggle('primary', PROFILE_INV_TAB==='zombies'); }
+  if(resourceBtn){ resourceBtn.classList.toggle('primary', PROFILE_INV_TAB==='resources'); }
   const ownedPlantsRaw = Array.isArray(PROFILE.owned) ? PROFILE.owned : [];
   const plantSet = new Set([...DEFAULT_OWNED, ...ownedPlantsRaw]);
   const plantItems = Array.from(plantSet).map(code=>{
@@ -197,6 +206,11 @@ function renderProfileInventory(){
       cooldown: typeof meta.cooldown==='number' ? meta.cooldown : null,
     };
   });
+  const resourceCounts = PROFILE && PROFILE.resources && typeof PROFILE.resources==='object' ? PROFILE.resources : {};
+  const resourceItems = RESOURCE_ITEMS.map(item=>({
+    ...item,
+    quantity: Number(resourceCounts[item.code])||0,
+  })).filter(item=>item.quantity>0);
   let html='';
   if(PROFILE_INV_TAB==='zombies'){
     html = zombieItems.length ? zombieItems.map(item=>{
@@ -205,6 +219,11 @@ function renderProfileInventory(){
       const extra = costPart || cdPart ? `<div class="profile-item-sub">${costPart}${cdPart}</div>` : '';
       return `<div class="profile-item"><div class="profile-item-icon">${item.icon}</div><div><div class="profile-item-title">${item.name}</div>${extra}</div></div>`;
     }).join('') : '<div class="muted">Нет доступных классов зомби</div>';
+  } else if(PROFILE_INV_TAB==='resources'){
+    html = resourceItems.length ? resourceItems.map(item=>{
+      const desc = item.description ? `<div class="profile-item-sub">${item.description}</div>` : '';
+      return `<div class="profile-item"><div class="profile-item-icon">${item.icon}</div><div><div class="profile-item-title">${item.name}</div><div class="profile-item-sub">Количество: ${item.quantity}</div>${desc}</div></div>`;
+    }).join('') : '<div class="muted">Нет собранных ресурсов</div>';
   } else {
     html = plantItems.length ? plantItems.map(item=>{
       const extra = item.cost!=null ? `<div class="profile-item-sub">Стоимость: ${item.cost}</div>` : '';
@@ -227,6 +246,9 @@ function openProfile(name){
   API('/api/profile?u='+encodeURIComponent(name)).then(j=>{
     PROFILE=j.profile||{};
     applyZombieDefaults(PROFILE);
+    if(!PROFILE.resources || typeof PROFILE.resources!=='object'){
+      PROFILE.resources={};
+    }
     PROFILE_INV_TAB='plants';
     const recent = (j.recent||[]).map(m=>`<li>Счёт: ${m.score}, Итог: ${m.outcome}, Время: ${m.duration}s</li>`).join('');
     box.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
@@ -242,6 +264,7 @@ function openProfile(name){
       <div class="profile-tabs">
         <button id="profileTabPlants" class="btn ${PROFILE_INV_TAB==='plants'?'primary':''}" onclick="setProfileInvTab('plants')">Растения</button>
         <button id="profileTabZombies" class="btn ${PROFILE_INV_TAB==='zombies'?'primary':''}" onclick="setProfileInvTab('zombies')">Зомби</button>
+        <button id="profileTabResources" class="btn ${PROFILE_INV_TAB==='resources'?'primary':''}" onclick="setProfileInvTab('resources')">Ресурсы</button>
       </div>
       <div id="profileInventoryList" class="profile-inventory-list"><div class="muted">Загрузка...</div></div>
     </div>`;
@@ -279,33 +302,60 @@ function renderShop(){
   const coins = SHOP_DATA.coins||0;
   const plants = Array.isArray(SHOP_DATA.plants)? SHOP_DATA.plants : [];
   const zombies = Array.isArray(SHOP_DATA.zombies)? SHOP_DATA.zombies : [];
-  const items = SHOP_TAB==='zombies' ? zombies : plants;
+  const resources = Array.isArray(SHOP_DATA.resources)? SHOP_DATA.resources : [];
+  if(!['plants','zombies','resources'].includes(SHOP_TAB)) SHOP_TAB='plants';
   const tabsHtml = `<div class="shop-tabs">
     <button class="btn ${SHOP_TAB==='plants'?'primary':''}" onclick="setShopTab('plants')">Растения</button>
     <button class="btn ${SHOP_TAB==='zombies'?'primary':''}" onclick="setShopTab('zombies')">Зомби</button>
+    <button class="btn ${SHOP_TAB==='resources'?'primary':''}" onclick="setShopTab('resources')">Ресурсы</button>
   </div>`;
-  const cardsHtml = items.length ? items.map(it=>{
-    const owned = !!it.owned;
-    const zombieInfo = ZOMBIE_LIBRARY[it.item];
-    const extra = SHOP_TAB==='zombies' && zombieInfo ? `<div class="muted">Очки: ${zombieInfo.cost}, Кд: ${zombieInfo.cooldown}s</div>` : '';
-    const kind = SHOP_TAB==='zombies' ? 'Класс зомби' : 'Растение';
-    const status = owned ? '<span class="muted">✅ Куплено</span>' : `<button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button>`;
-    return `<div class="card"><div class="icon">${it.icon||'🛒'}</div><div style="flex:1">
-      <div><b>${it.name||it.item}</b></div>
-      <div class="muted">${kind}</div>
-      ${extra}
-    </div><div style="text-align:right">${status}</div></div>`;
-  }).join('') : '<div class="muted">Нет доступных предметов</div>';
+  let cardsHtml='';
+  if(SHOP_TAB==='zombies'){
+    cardsHtml = zombies.length ? zombies.map(it=>{
+      const owned = !!it.owned;
+      const zombieInfo = ZOMBIE_LIBRARY[it.item];
+      const extra = zombieInfo ? `<div class="muted">Очки: ${zombieInfo.cost}, Кд: ${zombieInfo.cooldown}s</div>` : '';
+      const status = owned ? '<span class="muted">✅ Куплено</span>' : `<button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button>`;
+      return `<div class="card"><div class="icon">${it.icon||'🧟'}</div><div style="flex:1">
+        <div><b>${it.name||it.item}</b></div>
+        <div class="muted">Класс зомби</div>
+        ${extra}
+      </div><div style="text-align:right">${status}</div></div>`;
+    }).join('') : '<div class="muted">Нет доступных предметов</div>';
+  } else if(SHOP_TAB==='resources'){
+    cardsHtml = resources.length ? resources.map(it=>{
+      const meta = RESOURCE_META_MAP[it.item] || {};
+      const quantity = Number(it.quantity)||0;
+      const amount = Number(it.amount)||0;
+      const desc = (it.description || meta.description) ? `<div class="muted">${it.description || meta.description}</div>` : '';
+      const gain = amount>0 ? `<div class="muted">Получите: +${amount}</div>` : '';
+      return `<div class="card"><div class="icon">${it.icon||meta.icon||'📦'}</div><div style="flex:1">
+        <div><b>${it.name||meta.name||it.item}</b></div>
+        <div class="muted">Ресурс · У вас: ${quantity}</div>
+        ${desc}
+        ${gain}
+      </div><div style="text-align:right"><button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button></div></div>`;
+    }).join('') : '<div class="muted">Нет доступных ресурсов</div>';
+  } else {
+    cardsHtml = plants.length ? plants.map(it=>{
+      const owned = !!it.owned;
+      const status = owned ? '<span class="muted">✅ Куплено</span>' : `<button class="btn" onclick="buyItem('${it.item}')">Купить за ${it.price}</button>`;
+      return `<div class="card"><div class="icon">${it.icon||'🛒'}</div><div style="flex:1">
+        <div><b>${it.name||it.item}</b></div>
+        <div class="muted">Растение</div>
+      </div><div style="text-align:right">${status}</div></div>`;
+    }).join('') : '<div class="muted">Нет доступных предметов</div>';
+  }
   box.innerHTML = `<div><b>Ваши монеты:</b> ${coins}</div><div class="sep"></div>${tabsHtml}<div class="sep"></div><div class="shop-items">${cardsHtml}</div>`;
 }
 
 function setShopTab(tab){
-  SHOP_TAB = tab;
+  SHOP_TAB = ['plants','zombies','resources'].includes(tab) ? tab : 'plants';
   renderShop();
 }
 
 function openShop(tab){
-  SHOP_TAB = typeof tab === 'string' ? tab : 'plants';
+  SHOP_TAB = typeof tab === 'string' && ['plants','zombies','resources'].includes(tab) ? tab : 'plants';
   shopModal.style.display='flex';
   SHOP_DATA=null;
   renderShop();
@@ -315,12 +365,16 @@ function openShop(tab){
       coins,
       plants: Array.isArray(j.plants)? j.plants : [],
       zombies: Array.isArray(j.zombies)? j.zombies : [],
+      resources: Array.isArray(j.resources)? j.resources : [],
     };
     if(PROFILE){
       PROFILE.coins=coins;
       if(Array.isArray(j.owned)) PROFILE.owned=j.owned;
       if(Array.isArray(j.zombie_classes)) PROFILE.zombie_classes=j.zombie_classes;
       if(Array.isArray(j.zombie_deck)) PROFILE.zombie_deck=j.zombie_deck;
+      if(j.resource_inventory && typeof j.resource_inventory==='object'){
+        PROFILE.resources=j.resource_inventory;
+      }
       applyZombieDefaults(PROFILE);
       updateOwnedPlants();
     }
@@ -342,6 +396,12 @@ function buyItem(item){
         applyZombieDefaults(PROFILE);
         PROFILE.owned=Array.isArray(PROFILE.owned)?PROFILE.owned:[];
         PROFILE.zombie_classes=Array.isArray(PROFILE.zombie_classes)?PROFILE.zombie_classes:[];
+        if(!PROFILE.resources || typeof PROFILE.resources!=='object'){
+          PROFILE.resources={};
+        }
+        if(j.profile.resources && typeof j.profile.resources==='object'){
+          PROFILE.resources = j.profile.resources;
+        }
         PROFILE.coins=j.coins ?? PROFILE.coins;
         updateOwnedPlants();
       }
