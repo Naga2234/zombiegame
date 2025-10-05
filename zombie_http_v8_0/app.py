@@ -36,6 +36,8 @@ DEFAULT_PLANT_OWNED = ["peashooter","sunflower","wallnut"]
 DEFAULT_ZOMBIE_CLASSES = ["normal", "cone", "bucket"]
 DEFAULT_ZOMBIE_DECK = DEFAULT_ZOMBIE_CLASSES[:]
 
+RESOURCE_DEFAULTS = {}
+
 ZOMBIE_CARD_LIBRARY = {
     "normal": {"name": "Обычный", "cost": 20, "cooldown": 1.5},
     "cone": {"name": "Конус", "cost": 35, "cooldown": 4.0},
@@ -93,7 +95,8 @@ def ensure_user(user):
         users[user]={"password":"","score":0,"games_played":0,"games_won":0,"plants_placed":0,
                      "coins":0,"owned":DEFAULT_PLANT_OWNED[:],
                      "zombie_classes":DEFAULT_ZOMBIE_CLASSES[:],
-                     "zombie_deck":DEFAULT_ZOMBIE_DECK[:]}
+                     "zombie_deck":DEFAULT_ZOMBIE_DECK[:],
+                     "resources": RESOURCE_DEFAULTS.copy()}
         save_users(users)
 
 def normalize_user_record(data:dict):
@@ -104,6 +107,15 @@ def normalize_user_record(data:dict):
     data.setdefault("plants_placed",0)
     data.setdefault("coins",0)
     data.setdefault("owned", DEFAULT_PLANT_OWNED[:])
+    resources=data.get("resources")
+    cleaned_resources={k:0 for k in RESOURCE_DEFAULTS}
+    if isinstance(resources, dict):
+        for key, value in resources.items():
+            try:
+                cleaned_resources[key]=max(0, int(value))
+            except (ValueError, TypeError):
+                continue
+    data["resources"]=cleaned_resources
 
     classes=data.get("zombie_classes")
     if not isinstance(classes, list):
@@ -821,8 +833,18 @@ STORE_ITEMS = {
             "icon": ZOMBIE_CLASS_ICONS.get(code, "🧟"),
         }
         for code, data in ZOMBIE_CARD_LIBRARY.items()
-    ]
+    ],
+    "resources": [
+        {"item": "fertilizer", "type": "resource", "price": 15, "name": "Удобрение", "icon": "🧪",
+         "description": "Ускоряет рост растений", "amount": 5},
+        {"item": "sun_boost", "type": "resource", "price": 25, "name": "Солнечный заряд", "icon": "☀️",
+         "description": "Доп. запасы солнечной энергии", "amount": 15},
+        {"item": "repair_kit", "type": "resource", "price": 18, "name": "Ремкомплект", "icon": "🧰",
+         "description": "Материалы для укрепления защит", "amount": 3},
+    ],
 }
+
+RESOURCE_DEFAULTS = {item["item"]: 0 for item in STORE_ITEMS.get("resources", [])}
 
 @app.route("/api/store")
 def api_store():
@@ -831,6 +853,7 @@ def api_store():
     info=normalize_user_record(users.get(u, {})) if u else normalize_user_record({})
     owned=set(info.get("owned",[]))
     zombie_classes=set(info.get("zombie_classes", []))
+    resource_inventory=dict(info.get("resources", {}))
     plant_items=[]
     for it in STORE_ITEMS["plants"]:
         meta = {**it, "owned": it["item"] in owned}
@@ -839,15 +862,22 @@ def api_store():
     for it in STORE_ITEMS["zombies"]:
         meta = {**it, "owned": it["item"] in zombie_classes}
         zombie_items.append(meta)
+    resource_items=[]
+    for it in STORE_ITEMS.get("resources", []):
+        qty = int(resource_inventory.get(it["item"], 0))
+        meta = {**it, "quantity": qty}
+        resource_items.append(meta)
     coins = int(info.get("coins",0))
     return jsonify({
         "status": "ok",
         "coins": coins,
         "plants": plant_items,
         "zombies": zombie_items,
+        "resources": resource_items,
         "owned": sorted(owned),
         "zombie_classes": info.get("zombie_classes", []),
         "zombie_deck": info.get("zombie_deck", []),
+        "resource_inventory": resource_inventory,
     })
 
 @app.route("/api/buy", methods=["POST"])
@@ -859,25 +889,32 @@ def api_buy():
     if u not in users: return jsonify({"status":"error","msg":"Пользователь не найден"}),404
     plant_info = next((x for x in STORE_ITEMS["plants"] if x["item"]==item), None)
     zombie_info = next((x for x in STORE_ITEMS["zombies"] if x["item"]==item), None)
-    info = plant_info or zombie_info
+    resource_info = next((x for x in STORE_ITEMS.get("resources", []) if x["item"]==item), None)
+    info = plant_info or zombie_info or resource_info
     if not info: return jsonify({"status":"error","msg":"Товар не найден"}),404
     rec = normalize_user_record(users[u])
-    if info.get("type")!="zombie" and item in rec.get("owned",[]):
+    item_type = info.get("type")
+    if item_type=="plant" and item in rec.get("owned",[]):
         return jsonify({"status":"error","msg":"Уже куплено"}),400
-    if info.get("type")=="zombie" and item in rec.get("zombie_classes", []):
+    if item_type=="zombie" and item in rec.get("zombie_classes", []):
         return jsonify({"status":"error","msg":"Уже куплено"}),400
     price=int(info["price"])
     if rec.get("coins",0) < price:
         return jsonify({"status":"error","msg":"Не хватает монет"}),400
     rec["coins"] = rec.get("coins",0) - price
-    if info.get("type") == "zombie":
+    if item_type == "zombie":
         classes=set(rec.get("zombie_classes",[]))
         classes.add(item)
         rec["zombie_classes"] = sorted(classes)
-    else:
+    elif item_type == "plant":
         rec.setdefault("owned", DEFAULT_PLANT_OWNED[:])
         if item not in rec["owned"]:
             rec["owned"].append(item)
+    elif item_type == "resource":
+        resources = dict(rec.get("resources", {}))
+        amount = max(1, int(info.get("amount", 1)))
+        resources[item] = max(0, int(resources.get(item, 0))) + amount
+        rec["resources"] = resources
     rec = normalize_user_record(rec)
     users[u]=rec
     save_users(users)
