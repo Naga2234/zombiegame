@@ -416,6 +416,7 @@ function startCountdownTicker(){
 function stopCountdownTicker(){ if(COUNTDOWN_TIMER){ clearInterval(COUNTDOWN_TIMER); COUNTDOWN_TIMER=null; const cd=document.getElementById('countdown'); if(cd) cd.textContent=''; } }
 
 function render(){
+  document.body.classList.toggle('auth-view', VIEW==='auth');
   if(USER){
     navbar.innerHTML = `<span style="cursor:pointer" onclick="openProfile('${USER}')"><img class="avatar" src="${avatarUrl(USER)}&s=24" style="width:24px;height:24px"/> <b>${USER}</b></span>`;
   }else{ navbar.textContent = 'Гость'; }
@@ -548,18 +549,47 @@ function initAuthControls(){
 }
 
 function renderAuth(){
-  left.innerHTML = `<h2>Вход / Регистрация</h2>
-  <div class="row login-row"><input id="login" placeholder="Логин (латиница/цифры ._-)" /><button type="button" class="btn" onclick="generateNickname()"><span>🎲</span> Рандомный ник</button></div>
-  <div class="muted" id="loginStatus"></div>
-  <div class="row"><input id="pass" type="password" placeholder="Пароль (мин. 4 символа)" /></div>
-  <div id="passStrength" class="pass-strength level-0 is-empty">
-    <div class="pass-strength__track"><div class="pass-strength__bar"></div></div>
-    <div class="pass-strength__label muted">Введите пароль</div>
-  </div>
-  <div class="row"><button id="registerBtn" class="btn" onclick="register()"><span>📝</span> Регистрация</button>
-  <button class="btn primary" onclick="signin()"><span>🔑</span> Вход</button></div>
-  <div class="muted" id="authMsg"></div>`;
-  main.innerHTML = `<div class='muted'>Это страница входа. После входа попадёшь на главную.</div>`;
+  left.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-card__header">
+        <h1>Zombie Coop</h1>
+        <p class="auth-card__subtitle">Кооперативные битвы растений и зомби</p>
+      </div>
+      <p class="auth-card__hint">Создай логин и пароль, чтобы собраться с друзьями и защитить двор от волн зомби.</p>
+      <div class="auth-card__indicators">
+        <div class="auth-card__status muted" id="loginStatus"></div>
+      </div>
+      <label class="auth-card__label" for="login">Логин</label>
+      <div class="row login-row">
+        <input id="login" placeholder="Логин (латиница/цифры ._-)" />
+        <button type="button" class="btn" onclick="generateNickname()"><span>🎲</span> Рандомный ник</button>
+      </div>
+      <label class="auth-card__label" for="pass">Пароль</label>
+      <div class="row">
+        <input id="pass" type="password" placeholder="Пароль (мин. 4 символа)" />
+      </div>
+      <div id="passStrength" class="pass-strength level-0 is-empty">
+        <div class="pass-strength__track"><div class="pass-strength__bar"></div></div>
+        <div class="pass-strength__label muted">Введите пароль</div>
+      </div>
+      <div class="row auth-card__actions">
+        <button id="registerBtn" class="btn" onclick="register()"><span>📝</span> Регистрация</button>
+        <button class="btn primary" onclick="signin()"><span>🔑</span> Вход</button>
+      </div>
+      <div class="auth-card__helper muted">Регистрация сохраняет прогресс и коллекцию карточек.</div>
+      <div class="muted" id="authMsg"></div>
+    </div>`;
+  main.innerHTML = `
+    <div class="auth-illustration">
+      <div class="auth-illustration__badge">🧟‍♂️</div>
+      <h2>Стань защитником сада</h2>
+      <p>Присоединяйся к кооперативным матчам, делись стратегией и отбивай волны зомби вместе с товарищами.</p>
+      <ul class="auth-illustration__list">
+        <li>Создавай лобби и приглашай друзей</li>
+        <li>Развивай коллекцию растений и зомби</li>
+        <li>Соревнуйся за место в таблице лидеров</li>
+      </ul>
+    </div>`;
   initAuthControls();
 }
 async function register(){
