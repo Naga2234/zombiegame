@@ -1171,7 +1171,7 @@ def on_place_plant(data):
         if r not in allowed: emit("action_result", {"status":"error","msg":"Не ваша зона"}); return
         if st["grid"][r][c] is not None: emit("action_result", {"status":"error","msg":"Занято"}); return
         cell_right = (c + 1) * CELL_SIZE
-        block_threshold = cell_right - 0.4 * CELL_SIZE
+        block_threshold = cell_right - 0.7 * CELL_SIZE
         for z in st.get("zombies", []):
             if z.get("row") != r:
                 continue
