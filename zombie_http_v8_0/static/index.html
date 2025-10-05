@@ -93,6 +93,17 @@
   .pass-strength.level-4 .pass-strength__bar{background:var(--good)}
   .pass-strength.level-3 .pass-strength__label,
   .pass-strength.level-4 .pass-strength__label{color:var(--text)}
+  .profile-section-title{font-weight:600;font-size:16px;margin:4px 0 12px}
+  .profile-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .profile-tabs .btn{margin:0}
+  .profile-inventory-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .profile-item{border:1px solid var(--border);border-radius:12px;padding:10px;background:#f8fafc;display:flex;gap:10px;align-items:center;min-height:56px}
+  .profile-item-icon{font-size:20px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:10px}
+  .profile-item-title{font-weight:600;font-size:14px}
+  .profile-item-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  @media (max-width:480px){
+    .profile-inventory-list{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+  }
 </style>
 </head>
 <body>
