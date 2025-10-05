@@ -14,6 +14,8 @@ let ZOMBIE_COOLDOWNS={};
 let SHOP_TAB='plants';
 let SHOP_DATA=null;
 let PLANT_COOLDOWN_UNTIL=0;
+let USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
+let USERNAME_CHECK_COUNTER=0;
 
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
@@ -68,6 +70,14 @@ const navbar = document.getElementById('navbar');
 const modal = document.getElementById('createModal');
 const profileModal = document.getElementById('profileModal');
 const shopModal = document.getElementById('shopModal');
+
+function debounce(fn, delay=300){
+  let timer;
+  return function(...args){
+    clearTimeout(timer);
+    timer=setTimeout(()=>fn.apply(this,args), delay);
+  };
+}
 
 function mergeDefaultZombieClasses(list){
   const arr = Array.isArray(list) ? list : [];
@@ -408,18 +418,86 @@ function render(){
   if(VIEW==='game'){ renderGame(); return; }
 }
 
+const debouncedUsernameCheck = debounce(async (value, counter)=>{
+  try{
+    const res = await fetch(`/api/check_username?username=${encodeURIComponent(value)}`);
+    const data = await res.json();
+    if(counter !== USERNAME_CHECK_COUNTER) return;
+    const available = Boolean(data && data.available && res.ok);
+    if(available){
+      USERNAME_CHECK_STATE={available:true,msg:data.msg||'Логин свободен',tone:'good',pending:false};
+    } else {
+      const msg = data && data.msg ? data.msg : 'Логин занят';
+      USERNAME_CHECK_STATE={available:false,msg:msg,tone:'bad',pending:false};
+    }
+  } catch (err) {
+    if(counter !== USERNAME_CHECK_COUNTER) return;
+    USERNAME_CHECK_STATE={available:false,msg:'Не удалось проверить логин',tone:'bad',pending:false};
+  }
+  updateAuthStatusUI();
+}, 300);
+
+function scheduleUsernameCheck(raw){
+  const value=(raw||'').trim();
+  USERNAME_CHECK_COUNTER++;
+  const counter=USERNAME_CHECK_COUNTER;
+  if(!value){
+    USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
+    updateAuthStatusUI();
+    return;
+  }
+  USERNAME_CHECK_STATE={available:false,msg:'Проверка...',tone:'muted',pending:true};
+  updateAuthStatusUI();
+  debouncedUsernameCheck(value, counter);
+}
+
+function updateAuthStatusUI(){
+  const status=document.getElementById('loginStatus');
+  if(status){
+    status.textContent = USERNAME_CHECK_STATE.msg || '';
+    let color='var(--muted)';
+    if(USERNAME_CHECK_STATE.pending){
+      color='var(--muted)';
+    } else if(USERNAME_CHECK_STATE.tone==='good'){
+      color='var(--good)';
+    } else if(USERNAME_CHECK_STATE.tone==='bad'){
+      color='var(--bad)';
+    }
+    status.style.color=color;
+  }
+  const registerBtn=document.getElementById('registerBtn');
+  if(registerBtn){
+    registerBtn.disabled = USERNAME_CHECK_STATE.pending || !USERNAME_CHECK_STATE.available;
+  }
+}
+
+function initAuthControls(){
+  USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
+  updateAuthStatusUI();
+  const loginInput=document.getElementById('login');
+  if(!loginInput) return;
+  loginInput.addEventListener('input', ()=>scheduleUsernameCheck(loginInput.value));
+  scheduleUsernameCheck(loginInput.value);
+}
+
 function renderAuth(){
   left.innerHTML = `<h2>Вход / Регистрация</h2>
   <div class="row"><input id="login" placeholder="Логин (латиница/цифры ._-)" /></div>
+  <div class="muted" id="loginStatus"></div>
   <div class="row"><input id="pass" type="password" placeholder="Пароль (мин. 4 символа)" /></div>
-  <div class="row"><button class="btn" onclick="register()"><span>📝</span> Регистрация</button>
+  <div class="row"><button id="registerBtn" class="btn" onclick="register()"><span>📝</span> Регистрация</button>
   <button class="btn primary" onclick="signin()"><span>🔑</span> Вход</button></div>
   <div class="muted" id="authMsg"></div>`;
   main.innerHTML = `<div class='muted'>Это страница входа. После входа попадёшь на главную.</div>`;
+  initAuthControls();
 }
 async function register(){
   const u=document.getElementById('login').value.trim();
   const p=document.getElementById('pass').value;
+  if(!USERNAME_CHECK_STATE.available){
+    document.getElementById('authMsg').textContent = 'Ошибка: '+(USERNAME_CHECK_STATE.msg||'Проверьте логин');
+    return;
+  }
   const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
   const j=await r.json(); document.getElementById('authMsg').textContent = j.status==='ok'?'Регистрация успешна':'Ошибка: '+(j.msg||' ');
 }
