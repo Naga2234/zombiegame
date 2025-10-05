@@ -17,6 +17,13 @@ let PLANT_COOLDOWN_UNTIL=0;
 let USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
 let USERNAME_CHECK_COUNTER=0;
 
+const NICKNAME_ADJECTIVES=[
+  'Swift','Brave','Lucky','Frosty','Cosmic','Mighty','Sunny','Shadow','Electric','Silent'
+];
+const NICKNAME_NOUNS=[
+  'Pea','Runner','Knight','Guardian','Sprout','Ranger','Sun','Dream','Zombie','Bolt'
+];
+
 const DEFAULT_OWNED = ['peashooter','sunflower','wallnut'];
 const DEFAULT_ZOMBIE_CLASSES = ['normal','cone','bucket'];
 const DEFAULT_ZOMBIE_DECK = DEFAULT_ZOMBIE_CLASSES.slice();
@@ -451,6 +458,25 @@ function scheduleUsernameCheck(raw){
   debouncedUsernameCheck(value, counter);
 }
 
+function generateNickname(){
+  const loginInput=document.getElementById('login');
+  if(!loginInput){
+    return '';
+  }
+  const adj=NICKNAME_ADJECTIVES[Math.floor(Math.random()*NICKNAME_ADJECTIVES.length)]||'Swift';
+  const noun=NICKNAME_NOUNS[Math.floor(Math.random()*NICKNAME_NOUNS.length)]||'Pea';
+  const number=Math.floor(Math.random()*900)+100;
+  const nickname=`${adj}${noun}${number}`;
+  loginInput.value=nickname;
+  loginInput.dispatchEvent(new Event('input',{bubbles:true}));
+  loginInput.focus();
+  if(typeof loginInput.setSelectionRange==='function'){
+    const len=nickname.length;
+    loginInput.setSelectionRange(len, len);
+  }
+  return nickname;
+}
+
 function updateAuthStatusUI(){
   const status=document.getElementById('loginStatus');
   if(status){
@@ -523,7 +549,7 @@ function initAuthControls(){
 
 function renderAuth(){
   left.innerHTML = `<h2>Вход / Регистрация</h2>
-  <div class="row"><input id="login" placeholder="Логин (латиница/цифры ._-)" /></div>
+  <div class="row login-row"><input id="login" placeholder="Логин (латиница/цифры ._-)" /><button type="button" class="btn" onclick="generateNickname()"><span>🎲</span> Рандомный ник</button></div>
   <div class="muted" id="loginStatus"></div>
   <div class="row"><input id="pass" type="password" placeholder="Пароль (мин. 4 символа)" /></div>
   <div id="passStrength" class="pass-strength level-0 is-empty">
