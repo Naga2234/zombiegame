@@ -16,6 +16,7 @@ let SHOP_DATA=null;
 let PLANT_COOLDOWN_UNTIL=0;
 let USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
 let USERNAME_CHECK_COUNTER=0;
+let PROFILE_INV_TAB='plants';
 
 const NICKNAME_ADJECTIVES=[
   'Swift','Brave','Lucky','Frosty','Cosmic','Mighty','Sunny','Shadow','Electric','Silent'
@@ -55,6 +56,8 @@ const PLANTS_ALL=[
 ];
 let PLANTS=PLANTS_ALL.slice(); // filtered by ownership later
 const PLANT_COST_MAP = PLANTS_ALL.reduce((acc, item)=>{ acc[item.code]=item.cost; return acc; }, {});
+const PLANT_META_MAP = PLANTS_ALL.reduce((acc, item)=>{ acc[item.code]=item; return acc; }, {});
+const PLANT_ORDER_INDEX = PLANTS_ALL.reduce((acc, item, idx)=>{ acc[item.code]=idx; return acc; }, {});
 
 const ZOMBIE_LIBRARY={
   normal:{name:'Обычный',icon:'🧟',cost:20,cooldown:1.5},
@@ -155,6 +158,68 @@ function setView(v){ VIEW=v; if(HOME_TIMER){clearInterval(HOME_TIMER); HOME_TIME
 function openModal(){ modal.style.display='flex'; }
 function closeModal(){ modal.style.display='none'; }
 
+function isProfileModalOpen(){
+  return profileModal && profileModal.style.display==='flex';
+}
+
+function renderProfileInventory(){
+  if(!PROFILE || !isProfileModalOpen()) return;
+  const listEl=document.getElementById('profileInventoryList');
+  if(!listEl) return;
+  const plantBtn=document.getElementById('profileTabPlants');
+  const zombieBtn=document.getElementById('profileTabZombies');
+  if(plantBtn){ plantBtn.classList.toggle('primary', PROFILE_INV_TAB==='plants'); }
+  if(zombieBtn){ zombieBtn.classList.toggle('primary', PROFILE_INV_TAB==='zombies'); }
+  const ownedPlantsRaw = Array.isArray(PROFILE.owned) ? PROFILE.owned : [];
+  const plantSet = new Set([...DEFAULT_OWNED, ...ownedPlantsRaw]);
+  const plantItems = Array.from(plantSet).map(code=>{
+    const meta = PLANT_META_MAP[code] || {};
+    return {
+      code,
+      name: meta.name || code,
+      icon: meta.icon || '🌿',
+      cost: typeof meta.cost==='number' ? meta.cost : null,
+    };
+  }).sort((a,b)=>{
+    const ai = Number.isInteger(PLANT_ORDER_INDEX[a.code]) ? PLANT_ORDER_INDEX[a.code] : Infinity;
+    const bi = Number.isInteger(PLANT_ORDER_INDEX[b.code]) ? PLANT_ORDER_INDEX[b.code] : Infinity;
+    if(ai===bi){ return a.name.localeCompare(b.name,'ru'); }
+    return ai-bi;
+  });
+  const zombieCodes = Array.isArray(PROFILE.zombie_classes) ? PROFILE.zombie_classes : [];
+  const zombieItems = zombieCodes.filter(code=>ZOMBIE_LIBRARY[code]).map(code=>{
+    const meta = ZOMBIE_LIBRARY[code];
+    return {
+      code,
+      name: meta.name || code,
+      icon: meta.icon || '🧟',
+      cost: typeof meta.cost==='number' ? meta.cost : null,
+      cooldown: typeof meta.cooldown==='number' ? meta.cooldown : null,
+    };
+  });
+  let html='';
+  if(PROFILE_INV_TAB==='zombies'){
+    html = zombieItems.length ? zombieItems.map(item=>{
+      const costPart = item.cost!=null ? `Очки: ${item.cost}` : '';
+      const cdPart = item.cooldown!=null ? `${costPart ? ' · ' : ''}Кд: ${item.cooldown}s` : '';
+      const extra = costPart || cdPart ? `<div class="profile-item-sub">${costPart}${cdPart}</div>` : '';
+      return `<div class="profile-item"><div class="profile-item-icon">${item.icon}</div><div><div class="profile-item-title">${item.name}</div>${extra}</div></div>`;
+    }).join('') : '<div class="muted">Нет доступных классов зомби</div>';
+  } else {
+    html = plantItems.length ? plantItems.map(item=>{
+      const extra = item.cost!=null ? `<div class="profile-item-sub">Стоимость: ${item.cost}</div>` : '';
+      return `<div class="profile-item"><div class="profile-item-icon">${item.icon}</div><div><div class="profile-item-title">${item.name}</div>${extra}</div></div>`;
+    }).join('') : '<div class="muted">Нет доступных растений</div>';
+  }
+  listEl.innerHTML=html;
+}
+
+function setProfileInvTab(tab){
+  if(PROFILE_INV_TAB===tab) return;
+  PROFILE_INV_TAB=tab;
+  renderProfileInventory();
+}
+
 function openProfile(name){
   profileModal.style.display='flex';
   const box=document.getElementById('profileBox');
@@ -162,6 +227,7 @@ function openProfile(name){
   API('/api/profile?u='+encodeURIComponent(name)).then(j=>{
     PROFILE=j.profile||{};
     applyZombieDefaults(PROFILE);
+    PROFILE_INV_TAB='plants';
     const recent = (j.recent||[]).map(m=>`<li>Счёт: ${m.score}, Итог: ${m.outcome}, Время: ${m.duration}s</li>`).join('');
     box.innerHTML = `<div style="display:flex;align-items:center;gap:12px">
       <img class="avatar" src="${avatarUrl(name)}&s=42" style="width:42px;height:42px"/>
@@ -169,7 +235,17 @@ function openProfile(name){
     </div>
     <div class="sep"></div>
     <div>Лучший счёт: <b>${j.best||0}</b></div>
-    <div style="margin-top:6px"><b>Последние матчи:</b><ul>${recent||'<li>Пока нет</li>'}</ul></div>`;
+    <div style="margin-top:6px"><b>Последние матчи:</b><ul>${recent||'<li>Пока нет</li>'}</ul></div>
+    <div class="sep"></div>
+    <div>
+      <div class="profile-section-title">Инвентарь</div>
+      <div class="profile-tabs">
+        <button id="profileTabPlants" class="btn ${PROFILE_INV_TAB==='plants'?'primary':''}" onclick="setProfileInvTab('plants')">Растения</button>
+        <button id="profileTabZombies" class="btn ${PROFILE_INV_TAB==='zombies'?'primary':''}" onclick="setProfileInvTab('zombies')">Зомби</button>
+      </div>
+      <div id="profileInventoryList" class="profile-inventory-list"><div class="muted">Загрузка...</div></div>
+    </div>`;
+    renderProfileInventory();
   });
 }
 function closeProfile(){ profileModal.style.display='none'; }
@@ -187,6 +263,9 @@ function updateOwnedPlants(){
   if(INV_PAGE < 0){ INV_PAGE = 0; }
   if(document.getElementById('inventory')){
     buildInventory();
+  }
+  if(isProfileModalOpen()){
+    renderProfileInventory();
   }
 }
 
@@ -246,6 +325,9 @@ function openShop(tab){
       updateOwnedPlants();
     }
     renderShop();
+    if(isProfileModalOpen()){
+      renderProfileInventory();
+    }
   }).catch(()=>{
     const box=document.getElementById('shopBox');
     if(box) box.textContent='Не удалось загрузить магазин';
@@ -265,6 +347,9 @@ function buyItem(item){
       }
       openShop(prevTab);
       buildInventory();
+      if(isProfileModalOpen()){
+        renderProfileInventory();
+      }
     }
     else{ alert('Покупка не удалась: '+(j.msg||'')); }
   });
@@ -404,6 +489,9 @@ socket.on('profile_sync', (payload={})=>{
   PROFILE.owned = PROFILE.owned||[];
   applyZombieDefaults(PROFILE);
   updateOwnedPlants();
+  if(isProfileModalOpen()){
+    renderProfileInventory();
+  }
 });
 
 function startCountdownTicker(){
