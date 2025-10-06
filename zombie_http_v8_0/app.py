@@ -72,6 +72,57 @@ ZOMBIE_POINT_RATE = 6.0
 ZOMBIE_WAVE_BONUS = 30
 ZOMBIE_WAVE_COOLDOWN = 30.0
 
+
+def ensure_stats_struct(st: dict):
+    stats = st.setdefault("stats", {"kills": {}, "plants": {}, "coins": {}})
+    if not isinstance(stats.get("kills"), dict):
+        stats["kills"] = {}
+    if not isinstance(stats.get("coins"), dict):
+        stats["coins"] = {}
+    if not isinstance(stats.get("plants"), dict):
+        stats["plants"] = {}
+    return stats
+
+
+def ensure_player_stats(st: dict, player: str):
+    if not player:
+        return ensure_stats_struct(st)
+    stats = ensure_stats_struct(st)
+    kills = stats.setdefault("kills", {})
+    coins = stats.setdefault("coins", {})
+    plants = stats.setdefault("plants", {})
+    kills.setdefault(player, 0)
+    coins.setdefault(player, 0)
+    entry = plants.get(player)
+    if not isinstance(entry, dict):
+        entry = {}
+    plants[player] = entry
+    return stats
+
+
+def record_kill(st: dict, owner: str):
+    if not owner:
+        return
+    st.setdefault("coins", {})
+    st["coins"][owner] = st["coins"].get(owner, 0) + 1
+    stats = ensure_player_stats(st, owner)
+    kills = stats.setdefault("kills", {})
+    coins_stats = stats.setdefault("coins", {})
+    kills[owner] = kills.get(owner, 0) + 1
+    coins_stats[owner] = coins_stats.get(owner, 0) + 1
+
+
+def record_plant_usage(st: dict, owner: str, plant_type: str):
+    if not owner or not plant_type:
+        return
+    stats = ensure_player_stats(st, owner)
+    plants = stats.setdefault("plants", {})
+    entry = plants.get(owner, {})
+    if not isinstance(entry, dict):
+        entry = {}
+    entry[plant_type] = entry.get(plant_type, 0) + 1
+    plants[owner] = entry
+
 # ---- Storage helpers ----
 def load_json(path, default):
     if not os.path.exists(path): return default
@@ -225,11 +276,16 @@ def init_game_state(room):
         profile_cache[u] = rec
         owned_cache[u] = set(rec.get("owned", DEFAULT_PLANT_OWNED[:]))
     if mode=="pvp":
+        stats_template = {
+            "kills": {u: 0 for u in players},
+            "coins": {u: 0 for u in players},
+            "plants": {u: {} for u in players},
+        }
         roles = room.get("assigned_roles") or assign_roles(room)
         defender = roles.get("defender") if roles else None
         attacker = roles.get("attacker") if roles else None
         suns = {defender:150} if defender else {}
-        coins = {defender:0}
+        coins = {u:0 for u in players}
         zombie_deck = []
         if attacker:
             decks = room.setdefault("zombie_decks", {})
@@ -269,7 +325,11 @@ def init_game_state(room):
             "plant_cooldowns": {u:0.0 for u in players},
             "wave_total": 0,
             "wave_remaining": 0,
+            "stats": stats_template,
         }
+        st = room["game"]
+        for u in players:
+            ensure_player_stats(st, u)
         return
 
     waves = [
@@ -293,6 +353,12 @@ def init_game_state(room):
     suns = {u:150 for u in room["players"]}
     coins = {u:0 for u in room["players"]}
 
+    stats_template = {
+        "kills": {u: 0 for u in room["players"]},
+        "coins": {u: 0 for u in room["players"]},
+        "plants": {u: {} for u in room["players"]},
+    }
+
     room["game"] = {
         "mode":mode,
         "grid":grid,"zombies":[],"bullets":[],
@@ -309,7 +375,11 @@ def init_game_state(room):
         "plant_cooldowns": {u:0.0 for u in room["players"]},
         "wave_total": len(pending),
         "wave_remaining": len(pending),
+        "stats": stats_template,
     }
+    st = room["game"]
+    for u in room["players"]:
+        ensure_player_stats(st, u)
 
 def spawn_zombie(room, typ="normal", half=None, row=None):
     st=room["game"]
@@ -395,6 +465,7 @@ def build_next_wave(st, players):
     for u in players:
         st["suns"].setdefault(u, 150)
         st["coins"].setdefault(u, 0)
+        ensure_player_stats(st, u)
 
 def step_game(room,dt):
     st=room["game"]
@@ -506,7 +577,7 @@ def step_game(room,dt):
                             z["hp"]-=240; z["last_hit"]=now; z["last_hit_by"]=owner
                             if z["hp"]<=0 and z in st["zombies"]:
                                 st["zombies"].remove(z); st["score"]+=20
-                                if owner: st["coins"][owner]=st["coins"].get(owner,0)+1
+                                record_kill(st, owner)
                     st["grid"][r][c]=None
             elif ptype=="potato":
                 if "armed_at" not in plant: plant["armed_at"]=now+3.0
@@ -518,7 +589,7 @@ def step_game(room,dt):
                             z["hp"]-=260; z["last_hit"]=now; z["last_hit_by"]=owner; triggered=True
                             if z["hp"]<=0 and z in st["zombies"]:
                                 st["zombies"].remove(z); st["score"]+=25
-                                if owner: st["coins"][owner]=st["coins"].get(owner,0)+1
+                                record_kill(st, owner)
                     if triggered: st["grid"][r][c]=None
             elif ptype=="spikeweed":
                 left=c*CELL_SIZE; right=(c+1)*CELL_SIZE
@@ -529,7 +600,7 @@ def step_game(room,dt):
                         z["hp"]-=12*dt; z["last_hit"]=now; z["last_hit_by"]=owner
                         if z["hp"]<=0 and z in st["zombies"]:
                             st["zombies"].remove(z); st["score"]+=8
-                            if owner: st["coins"][owner]=st["coins"].get(owner,0)+1
+                            record_kill(st, owner)
 
     # bullets
     for b in list(st["bullets"]):
@@ -548,7 +619,7 @@ def step_game(room,dt):
                     if z in st["zombies"]:
                         st["zombies"].remove(z); st["score"]+=10
                         owner = z.get("last_hit_by")
-                        if owner: st["coins"][owner]=st["coins"].get(owner,0)+1
+                        record_kill(st, owner)
                 break
 
     # aura list per row
@@ -727,6 +798,65 @@ def game_loop(room_id):
                     match_entry = {"room_id": room_id, "players": list(room["players"]), "score": score,
                                    "outcome": outcome, "duration": duration, "ended_at": int(time.time())}
                     matches.append(match_entry); save_matches(matches)
+
+                    stats_struct = ensure_stats_struct(st) if st else {"kills": {}, "coins": {}, "plants": {}}
+                    players_list = list(room.get("players", []))
+                    seen_players = set(players_list)
+                    for key in ("kills", "coins", "plants"):
+                        section = stats_struct.get(key) if stats_struct else {}
+                        if isinstance(section, dict):
+                            for name in section.keys():
+                                if name not in seen_players:
+                                    players_list.append(name)
+                                    seen_players.add(name)
+
+                    kills_payload = {}
+                    coins_payload = {}
+                    plants_payload = {}
+                    stats_kills = stats_struct.get("kills", {}) if isinstance(stats_struct, dict) else {}
+                    stats_coins = stats_struct.get("coins", {}) if isinstance(stats_struct, dict) else {}
+                    stats_plants = stats_struct.get("plants", {}) if isinstance(stats_struct, dict) else {}
+                    for name in players_list:
+                        try:
+                            kills_payload[name] = int(stats_kills.get(name, 0))
+                        except (TypeError, ValueError):
+                            kills_payload[name] = 0
+                        base_coin = 0
+                        if st and isinstance(st.get("coins"), dict):
+                            base_coin = st.get("coins", {}).get(name, 0)
+                        value = stats_coins.get(name, base_coin) if isinstance(stats_coins, dict) else base_coin
+                        try:
+                            coins_payload[name] = int(value)
+                        except (TypeError, ValueError):
+                            try:
+                                coins_payload[name] = int(base_coin)
+                            except (TypeError, ValueError):
+                                coins_payload[name] = 0
+                        player_plants = stats_plants.get(name, {}) if isinstance(stats_plants, dict) else {}
+                        clean_plants = {}
+                        if isinstance(player_plants, dict):
+                            for ptype, count in player_plants.items():
+                                try:
+                                    clean_plants[ptype] = int(count)
+                                except (TypeError, ValueError):
+                                    continue
+                        plants_payload[name] = clean_plants
+
+                    game_mode = (st.get("mode") if st else None) or room.get("mode")
+                    game_over_payload = {
+                        "room_id": room_id,
+                        "outcome": outcome,
+                        "score": score,
+                        "duration": duration,
+                        "mode": game_mode,
+                        "players": players_list,
+                        "stats": {
+                            "kills": kills_payload,
+                            "coins": coins_payload,
+                            "plants": plants_payload,
+                        },
+                    }
+
                     # award coins
                     for u in room["players"]:
                         ensure_user(u)
@@ -740,7 +870,7 @@ def game_loop(room_id):
                     room["started"]=False; room["game"]=None
                     room["assigned_roles"]=None
                     socketio.emit("room_update", room_payload(room_id), to=room_id)
-                    socketio.emit("game_over", {"room_id": room_id, "outcome": outcome}, to=room_id)
+                    socketio.emit("game_over", game_over_payload, to=room_id)
 
         with rooms_lock:
             room=rooms.get(room_id)
@@ -1236,6 +1366,7 @@ def on_place_plant(data):
             return
         st["suns"][username]-=cost
         st["grid"][r][c]={"type":ptype,"hp":PLANT_HP[ptype],"owner":username,"cd":0.0}
+        record_plant_usage(st, username, ptype)
         cooldowns[username]=now
         emit("action_result", {"status":"ok"})
         for u in room.get("players", []):

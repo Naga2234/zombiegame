@@ -3,6 +3,7 @@ const socket = io({autoConnect:true, transports:['websocket','polling']});
 let USER=null, PROFILE=null, ROOM_ID=null, MY_INDEX=0, VIEW='auth', CURRENT='peashooter';
 let GAME_STATE=null, SUN_NOW=999, HOME_TIMER=null, HOVER_CELL=null;
 let ROOM_CACHE=null, COUNTDOWN_TIMER=null, COUNTDOWN_LEFT=0;
+let GAME_SUMMARY=null;
 let INV_PAGE=0;
 let PENDING_ACTIONS=[];
 let MY_ROLE='defender';
@@ -159,10 +160,73 @@ function cooldownsEqual(a={}, b={}){
   return true;
 }
 
+function formatDuration(seconds){
+  const value=Number(seconds);
+  if(!Number.isFinite(value) || value < 0){
+    return '—';
+  }
+  const total=Math.floor(value);
+  const minutes=Math.floor(total/60);
+  const secs=total%60;
+  return `${minutes}:${secs.toString().padStart(2,'0')}`;
+}
+
+function safeStatNumber(value){
+  const num=Number(value);
+  if(!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.round(num));
+}
+
+function summaryOutcomeMeta(outcome){
+  const code=String(outcome||'').toLowerCase();
+  if(code==='win'){
+    return {emoji:'🏆', title:'Победа', background:'linear-gradient(135deg,#bbf7d0,#86efac)', text:'#166534'};
+  }
+  if(code==='lose'){
+    return {emoji:'💀', title:'Поражение', background:'linear-gradient(135deg,#fecaca,#fca5a5)', text:'#7f1d1d'};
+  }
+  if(code==='draw'){
+    return {emoji:'🤝', title:'Ничья', background:'linear-gradient(135deg,#fde68a,#fcd34d)', text:'#92400e'};
+  }
+  return {emoji:'🎮', title:'Матч завершён', background:'linear-gradient(135deg,#dbeafe,#bfdbfe)', text:'#1e3a8a'};
+}
+
+function collectSummaryPlayers(data){
+  const payload=data||{};
+  const base=Array.isArray(payload.players)? payload.players.slice():[];
+  const seen=new Set(base);
+  const stats=payload.stats&&typeof payload.stats==='object'?payload.stats:{};
+  ['kills','coins','plants'].forEach(key=>{
+    const section=stats[key];
+    if(section && typeof section==='object'){
+      Object.keys(section).forEach(name=>{
+        if(!seen.has(name)){
+          seen.add(name);
+          base.push(name);
+        }
+      });
+    }
+  });
+  return base;
+}
+
+function formatModeLabel(mode){
+  const code=String(mode||'').toLowerCase();
+  if(code==='pvp') return 'PvP';
+  if(code==='coop') return 'Coop';
+  if(code==='survival') return 'Survival';
+  return mode||'—';
+}
+
 function md5(s){return CryptoJS.MD5(s.toLowerCase().trim()).toString()}
 function avatarUrl(name){ return `https://www.gravatar.com/avatar/${md5(name)}?d=identicon`; }
 
-function setView(v){ VIEW=v; if(HOME_TIMER){clearInterval(HOME_TIMER); HOME_TIMER=null;} render(); }
+function setView(v){
+  VIEW=v;
+  if(v==='game'){ GAME_SUMMARY=null; }
+  if(HOME_TIMER){clearInterval(HOME_TIMER); HOME_TIMER=null;}
+  render();
+}
 function handleCreateModalKeydown(event){
   if(event.key==='Escape'){
     event.preventDefault();
@@ -497,6 +561,7 @@ socket.on('connected', ()=>{
 socket.on('room_update', (data)=>{
   ROOM_CACHE=data.room;
   if(VIEW==='room'){ drawRoomInfo(data.room); }
+  if(VIEW==='summary'){ renderGameSummary(); }
   if(data.room.countdown_until){
     COUNTDOWN_LEFT = Math.max(0, Math.floor(data.room.countdown_until - (Date.now()/1000)));
     startCountdownTicker();
@@ -505,8 +570,22 @@ socket.on('room_update', (data)=>{
   }
   if(data.room.started && VIEW!=='game'){ setView('game'); }
 });
-socket.on('game_started', (payload)=>{ if(payload && payload.room_id===ROOM_ID){ setView('game'); }});
-socket.on('game_over', (payload)=>{ if(ROOM_ID===payload.room_id){ setView('room'); }});
+socket.on('game_started', (payload)=>{ if(payload && payload.room_id===ROOM_ID){ GAME_SUMMARY=null; setView('game'); }});
+socket.on('game_over', (payload={})=>{
+  if(ROOM_ID===payload.room_id){
+    const statsPayload = payload.stats && typeof payload.stats==='object' ? payload.stats : {};
+    GAME_SUMMARY = {
+      ...payload,
+      players: Array.isArray(payload.players) ? payload.players.slice() : [],
+      stats: {
+        kills: statsPayload.kills && typeof statsPayload.kills==='object' ? {...statsPayload.kills} : {},
+        coins: statsPayload.coins && typeof statsPayload.coins==='object' ? {...statsPayload.coins} : {},
+        plants: statsPayload.plants && typeof statsPayload.plants==='object' ? {...statsPayload.plants} : {},
+      },
+    };
+    setView('summary');
+  }
+});
 socket.on('room_deleted', (payload)=>{
   if(ROOM_ID===payload.room_id){
     alert('Комната удалена (все игроки вышли).');
@@ -642,6 +721,7 @@ function render(){
   if(VIEW==='auth'){ renderAuth(); return; }
   if(VIEW==='home'){ renderHome(); return; }
   if(VIEW==='room'){ renderRoom(); return; }
+  if(VIEW==='summary'){ renderGameSummary(); return; }
   if(VIEW==='game'){ renderGame(); return; }
 }
 
@@ -974,7 +1054,9 @@ function toggleReady(){ socket.emit('toggle_ready',{room_id:ROOM_ID, username:US
 function startGame(){ socket.emit('start',{room_id:ROOM_ID, username:USER}); }
 function rematch(){ socket.emit('rejoin',{room_id:ROOM_ID, username:USER}); }
 function sendChat(){ const t=document.getElementById('chatInput').value.trim(); if(!t) return; socket.emit('chat',{room_id:ROOM_ID, username:USER, text:t}); document.getElementById('chatInput').value=''; }
-function leaveRoom(){ socket.emit('leave_room',{room_id:ROOM_ID, username:USER}); ROOM_ID=null; localStorage.removeItem('ROOM_ID'); setView('home'); listRooms(); stopCountdownTicker(); }
+function leaveRoom(){ socket.emit('leave_room',{room_id:ROOM_ID, username:USER}); ROOM_ID=null; localStorage.removeItem('ROOM_ID'); GAME_SUMMARY=null; setView('home'); listRooms(); stopCountdownTicker(); }
+
+function returnToLobby(){ GAME_SUMMARY=null; setView('room'); }
 
 function renderGame(){
   const mode=ROOM_CACHE?.mode||'coop';
@@ -1080,6 +1162,112 @@ function renderZombieGame(){
     socket.emit('spawn_zombie_manual',{room_id:ROOM_ID, username:USER, ztype:CURRENT_Z_CARD, row:r});
   });
   redraw();
+}
+
+function renderGameSummary(){
+  const data=GAME_SUMMARY||{};
+  const meta=summaryOutcomeMeta(data.outcome);
+  const rawMode=(data.mode||ROOM_CACHE?.mode||'coop');
+  const modeLabel=formatModeLabel(rawMode);
+  const scoreLabel=safeStatNumber(data.score||0);
+  const durationLabel=formatDuration(data.duration);
+  const players=collectSummaryPlayers(data);
+  const participantsHtml = players.length
+    ? players.map(name=>`<span class="pill" onclick="openProfile('${name}')">${name}</span>`).join(' ')
+    : '<span class="muted">Нет данных</span>';
+
+  left.innerHTML = `<h2>Итоги боя</h2>
+    <div class="muted">Комната: <b>${ROOM_CACHE?.name||'-'}</b></div>
+    <div class="muted">Режим: <b>${modeLabel}</b></div>
+    <div class="muted">Результат: <b>${meta.emoji} ${meta.title}</b></div>
+    <div class="muted">Очки команды: <b>${scoreLabel}</b></div>
+    <div class="muted">Длительность: <b>${durationLabel}</b></div>
+    <div class="sep"></div>
+    <button class="btn" onclick="returnToLobby()"><span>⬅️</span> Вернуться в лобби</button>
+    ${ROOM_ID?`<button class="btn" onclick="rematch()"><span>🔁</span> Реванш</button>`:''}
+    <div class="sep"></div>
+    <div class="muted">Участники</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${participantsHtml}</div>
+    <div class="sep"></div>
+    <div class="muted">Статистика сохранится до старта следующей игры.</div>`;
+
+  main.innerHTML = renderGameOverSummary(data);
+}
+
+function renderGameOverSummary(data){
+  const payload=data||{};
+  const meta=summaryOutcomeMeta(payload.outcome);
+  const players=collectSummaryPlayers(payload);
+  const stats=payload.stats&&typeof payload.stats==='object'?payload.stats:{};
+  const kills=stats.kills&&typeof stats.kills==='object'?stats.kills:{};
+  const coins=stats.coins&&typeof stats.coins==='object'?stats.coins:{};
+  const plants=stats.plants&&typeof stats.plants==='object'?stats.plants:{};
+  const scoreLabel=safeStatNumber(payload.score||0);
+  const durationLabel=formatDuration(payload.duration);
+  const rawMode=(payload.mode||ROOM_CACHE?.mode||'coop');
+  const modeLabel=formatModeLabel(rawMode);
+  const isPvP = String(rawMode||'').toLowerCase()==='pvp';
+
+  if(!players.length){
+    return `<div class="empty-state" style="max-width:680px">
+      <div class="empty-state__icon">📊</div>
+      <div class="empty-state__title">Нет данных по матчу</div>
+      <div class="empty-state__text">Статистика будет отображаться после завершения игры.</div>
+    </div>`;
+  }
+
+  const cards=players.map(name=>{
+    const killCount=safeStatNumber(kills[name]);
+    const coinCount=safeStatNumber(coins[name]);
+    const plantMap=plants[name];
+    const roleHint = isPvP ? 'Участник PvP' : 'Защитник';
+    let plantsHtml='<span class="muted">—</span>';
+    if(plantMap && typeof plantMap==='object'){
+      const entries=Object.entries(plantMap).filter(([,cnt])=>safeStatNumber(cnt)>0);
+      entries.sort((a,b)=>{
+        const ai=PLANT_ORDER_INDEX[a[0]] ?? 999;
+        const bi=PLANT_ORDER_INDEX[b[0]] ?? 999;
+        return ai-bi;
+      });
+      if(entries.length){
+        plantsHtml=entries.map(([ptype,count])=>{
+          const metaPlant=PLANT_META_MAP[ptype]||{};
+          const icon=metaPlant.icon||'🪴';
+          const title=metaPlant.name||ptype;
+          const qty=safeStatNumber(count);
+          return `<span class="pill" title="${title}">${icon} ×${qty}</span>`;
+        }).join(' ');
+      }
+    }
+    return `<div class="summary-card" style="border:1px solid var(--border);border-radius:18px;padding:18px;background:#fff;display:flex;flex-direction:column;gap:14px;box-shadow:0 18px 36px rgba(15,23,42,0.08)">
+      <div style="display:flex;align-items:center;gap:12px">
+        <img class="avatar" src="${avatarUrl(name)}&s=48" alt="${name}" style="width:48px;height:48px"/>
+        <div>
+          <div style="font-weight:600;font-size:16px">${name}</div>
+          <div class="muted">${roleHint}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div><div class="muted">Убито</div><div style="font-weight:700;font-size:22px">${killCount}</div></div>
+        <div><div class="muted">Монеты</div><div style="font-weight:700;font-size:22px">${coinCount}</div></div>
+      </div>
+      <div>
+        <div class="muted">Растения</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${plantsHtml}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="width:100%;max-width:980px;display:flex;flex-direction:column;gap:20px">
+    <div style="padding:28px;border-radius:26px;background:${meta.background};color:${meta.text};box-shadow:0 24px 60px rgba(15,23,42,0.15);display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:28px;font-weight:700;display:flex;align-items:center;gap:12px">${meta.emoji} ${meta.title}</div>
+      <div style="font-size:14px;opacity:0.9">Режим: ${modeLabel} · Очки: ${scoreLabel} · Время: ${durationLabel}</div>
+    </div>
+    <div>
+      <h3 style="margin:0 0 12px">Статистика игроков</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px">${cards}</div>
+    </div>
+  </div>`;
 }
 
 function buildZombieDeckUI(){
