@@ -1028,20 +1028,35 @@ function drawRoomInfo(r){
   const info=document.getElementById('roomInfo');
   if(info) info.innerHTML = `Комната: <b>${r.name}</b> (ID: ${r.room_id}) <span class="badge">Режим: ${r.mode}</span> <span class="badge">Игроков: ${r.players.length}/${r.max_players}</span> · Хост: <span class="pill" onclick="openProfile('${r.owner}')">${r.owner}</span>`;
   const playersDiv=document.getElementById('players');
+  let readyCount=0;
   if(playersDiv){
     const roles=r.roles||{}; const assigned=r.assigned||{};
+    readyCount = r.players.filter(p=>p.ready).length;
     if(!r.players.length){
-      playersDiv.innerHTML = `<div class="room-roster__empty">Пока пусто</div>`;
+      playersDiv.innerHTML = `<div class="room-roster__summary">Готовы: 0/0</div><div class="room-roster__empty">Пока пусто</div>`;
     } else {
-      playersDiv.innerHTML = r.players.map(p=>{
+      const cards = r.players.map(p=>{
         const choice=roles[p.name]||'random';
         const final=(assigned && assigned.defender===p.name)?'plant':(assigned && assigned.attacker===p.name)?'zombie':choice;
-        const badge = r.mode==='pvp'?` <span class="muted">(${roleIcon(final)})</span>`:'';
-        return `<span class="pill" onclick="openProfile('${p.name}')">${p.name} ${p.ready?'✔️':'❌'}${badge}</span>`;
-      }).join(' ');
+        const isReady = !!p.ready;
+        const isHost = p.name===r.owner;
+        const roleMarkup = `${roleIcon(final)} ${roleLabel(final)}`;
+        return `<div class="player-tile${isReady?' player-tile--ready':''}${isHost?' player-tile--host':''}" onclick="openProfile('${p.name}')">
+          <img class="player-tile__avatar" src="${avatarUrl(p.name)}" alt="${p.name}" />
+          <div class="player-tile__info">
+            <div class="player-tile__name">${p.name}</div>
+            <div class="player-tile__role">${roleMarkup}</div>
+          </div>
+          <div class="player-tile__badges">
+            ${isHost?'<span class="player-tile__badge player-tile__badge--host">Хост</span>':''}
+            <span class="player-tile__badge ${isReady?'player-tile__badge--ready':'player-tile__badge--waiting'}">${isReady?'Готов':'Ждёт'}</span>
+          </div>
+        </div>`;
+      });
+      playersDiv.innerHTML = `<div class="room-roster__summary">Готовы: ${readyCount}/${r.players.length}</div>` + cards.join('');
     }
   }
-  const startBtn=document.getElementById('startBtn'); if(startBtn){ const allReady = (r.players.length===r.max_players) && r.players.every(p=>p.ready); startBtn.disabled = !(USER===r.owner && allReady); }
+  const startBtn=document.getElementById('startBtn'); if(startBtn){ const totalPlayers=r.players.length; const maxPlayers=r.max_players; const allReady=(totalPlayers===maxPlayers) && readyCount===totalPlayers; startBtn.disabled = !(USER===r.owner && allReady); }
   MY_INDEX = Math.max(0, r.players.map(p=>p.name).indexOf(USER));
   if(r.mode==='pvp' && r.assigned){
     if(r.assigned.defender===USER) MY_INDEX=0;
@@ -1092,6 +1107,13 @@ function roleIcon(code){
   if(code==='plant') return '🌿';
   if(code==='zombie') return '🧟';
   return '🎲';
+}
+
+function roleLabel(code){
+  if(code==='plant') return 'Растения';
+  if(code==='zombie') return 'Зомби';
+  if(code==='random') return 'Случайно';
+  return '—';
 }
 
 function buildRoleControls(r){
