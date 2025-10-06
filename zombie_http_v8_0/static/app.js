@@ -196,7 +196,7 @@ function collectSummaryPlayers(data){
   const base=Array.isArray(payload.players)? payload.players.slice():[];
   const seen=new Set(base);
   const stats=payload.stats&&typeof payload.stats==='object'?payload.stats:{};
-  ['kills','coins','plants'].forEach(key=>{
+  ['kills','coins','plants','destroyed'].forEach(key=>{
     const section=stats[key];
     if(section && typeof section==='object'){
       Object.keys(section).forEach(name=>{
@@ -584,6 +584,7 @@ socket.on('game_over', (payload={})=>{
         kills: statsPayload.kills && typeof statsPayload.kills==='object' ? {...statsPayload.kills} : {},
         coins: statsPayload.coins && typeof statsPayload.coins==='object' ? {...statsPayload.coins} : {},
         plants: statsPayload.plants && typeof statsPayload.plants==='object' ? {...statsPayload.plants} : {},
+        destroyed: statsPayload.destroyed && typeof statsPayload.destroyed==='object' ? {...statsPayload.destroyed} : {},
       },
     };
     setView('summary');
@@ -1366,11 +1367,14 @@ function renderGameOverSummary(data){
   const kills=stats.kills&&typeof stats.kills==='object'?stats.kills:{};
   const coins=stats.coins&&typeof stats.coins==='object'?stats.coins:{};
   const plants=stats.plants&&typeof stats.plants==='object'?stats.plants:{};
+  const destroyed=stats.destroyed&&typeof stats.destroyed==='object'?stats.destroyed:{};
   const scoreLabel=safeStatNumber(payload.score||0);
   const durationLabel=formatDuration(payload.duration);
   const rawMode=(payload.mode||ROOM_CACHE?.mode||'coop');
   const modeLabel=formatModeLabel(rawMode);
   const isPvP = String(rawMode||'').toLowerCase()==='pvp';
+  const attackerName = typeof payload.attacker==='string' && payload.attacker ? payload.attacker : null;
+  const defenderName = typeof payload.defender==='string' && payload.defender ? payload.defender : null;
 
   let pvpRewardNote='';
   if(isPvP){
@@ -1397,7 +1401,17 @@ function renderGameOverSummary(data){
     const killCount=safeStatNumber(kills[name]);
     const coinCount=safeStatNumber(coins[name]);
     const plantMap=plants[name];
-    const roleHint = isPvP ? 'Участник PvP' : 'Защитник';
+    const destroyedMap=destroyed[name];
+    let roleHint = 'Защитник';
+    if(isPvP){
+      if(attackerName && name===attackerName){
+        roleHint='Зомби';
+      } else if(defenderName && name===defenderName){
+        roleHint='Защитник';
+      } else {
+        roleHint='Участник PvP';
+      }
+    }
     let plantsHtml='<span class="muted">—</span>';
     if(plantMap && typeof plantMap==='object'){
       const entries=Object.entries(plantMap).filter(([,cnt])=>safeStatNumber(cnt)>0);
@@ -1416,6 +1430,29 @@ function renderGameOverSummary(data){
         }).join(' ');
       }
     }
+    let destroyedHtml='';
+    if(isPvP && attackerName && name===attackerName){
+      let entries=[];
+      if(destroyedMap && typeof destroyedMap==='object'){
+        entries=Object.entries(destroyedMap).filter(([,cnt])=>safeStatNumber(cnt)>0);
+        entries.sort((a,b)=>{
+          const ai=PLANT_ORDER_INDEX[a[0]] ?? 999;
+          const bi=PLANT_ORDER_INDEX[b[0]] ?? 999;
+          return ai-bi;
+        });
+      }
+      const totalDestroyed=entries.reduce((sum,[,cnt])=>sum+safeStatNumber(cnt),0);
+      const listHtml=entries.length
+        ? entries.map(([ptype,count])=>{
+            const metaPlant=PLANT_META_MAP[ptype]||{};
+            const icon=metaPlant.icon||'🪴';
+            const title=metaPlant.name||ptype;
+            const qty=safeStatNumber(count);
+            return `<span class="pill" title="${title}">${icon} ×${qty}</span>`;
+          }).join(' ')
+        : '<span class="muted">—</span>';
+      destroyedHtml=`<div><div class="muted">Уничтожено растений: <b>${safeStatNumber(totalDestroyed)}</b></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${listHtml}</div></div>`;
+    }
     return `<div class="summary-card" style="border:1px solid var(--border);border-radius:18px;padding:18px;background:#fff;display:flex;flex-direction:column;gap:14px;box-shadow:0 18px 36px rgba(15,23,42,0.08)">
       <div style="display:flex;align-items:center;gap:12px">
         <img class="avatar" src="${avatarUrl(name)}&s=48" alt="${name}" style="width:48px;height:48px"/>
@@ -1432,6 +1469,7 @@ function renderGameOverSummary(data){
         <div class="muted">Растения</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${plantsHtml}</div>
       </div>
+      ${destroyedHtml}
     </div>`;
   }).join('');
 

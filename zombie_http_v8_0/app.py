@@ -74,13 +74,15 @@ ZOMBIE_WAVE_COOLDOWN = 30.0
 
 
 def ensure_stats_struct(st: dict):
-    stats = st.setdefault("stats", {"kills": {}, "plants": {}, "coins": {}})
+    stats = st.setdefault("stats", {"kills": {}, "plants": {}, "coins": {}, "destroyed": {}})
     if not isinstance(stats.get("kills"), dict):
         stats["kills"] = {}
     if not isinstance(stats.get("coins"), dict):
         stats["coins"] = {}
     if not isinstance(stats.get("plants"), dict):
         stats["plants"] = {}
+    if not isinstance(stats.get("destroyed"), dict):
+        stats["destroyed"] = {}
     return stats
 
 
@@ -91,12 +93,17 @@ def ensure_player_stats(st: dict, player: str):
     kills = stats.setdefault("kills", {})
     coins = stats.setdefault("coins", {})
     plants = stats.setdefault("plants", {})
+    destroyed = stats.setdefault("destroyed", {})
     kills.setdefault(player, 0)
     coins.setdefault(player, 0)
     entry = plants.get(player)
     if not isinstance(entry, dict):
         entry = {}
     plants[player] = entry
+    destroyed_entry = destroyed.get(player)
+    if not isinstance(destroyed_entry, dict):
+        destroyed_entry = {}
+    destroyed[player] = destroyed_entry
     return stats
 
 
@@ -122,6 +129,24 @@ def record_plant_usage(st: dict, owner: str, plant_type: str):
         entry = {}
     entry[plant_type] = entry.get(plant_type, 0) + 1
     plants[owner] = entry
+
+
+def record_plant_destroyed_by_zombie(st: dict, plant_type: str):
+    if not plant_type:
+        return
+    mode = (st.get("mode") or "").lower()
+    if mode != "pvp":
+        return
+    attacker = st.get("attacker")
+    if not attacker:
+        return
+    stats = ensure_player_stats(st, attacker)
+    destroyed = stats.setdefault("destroyed", {})
+    entry = destroyed.get(attacker)
+    if not isinstance(entry, dict):
+        entry = {}
+    entry[plant_type] = entry.get(plant_type, 0) + 1
+    destroyed[attacker] = entry
 
 # ---- Storage helpers ----
 def load_json(path, default):
@@ -280,6 +305,7 @@ def init_game_state(room):
             "kills": {u: 0 for u in players},
             "coins": {u: 0 for u in players},
             "plants": {u: {} for u in players},
+            "destroyed": {u: {} for u in players},
         }
         roles = room.get("assigned_roles") or assign_roles(room)
         defender = roles.get("defender") if roles else None
@@ -357,6 +383,7 @@ def init_game_state(room):
         "kills": {u: 0 for u in room["players"]},
         "coins": {u: 0 for u in room["players"]},
         "plants": {u: {} for u in room["players"]},
+        "destroyed": {u: {} for u in room["players"]},
     }
 
     room["game"] = {
@@ -648,8 +675,11 @@ def step_game(room,dt):
                     for rr in range(max(0,z["row"]-1), min(ROWS, z["row"]+2)):
                         for cc in range(max(0,col-1), min(COLS, col+2)):
                             if st["grid"][rr][cc]:
-                                st["grid"][rr][cc]["hp"]-=160
-                                if st["grid"][rr][cc]["hp"]<=0: st["grid"][rr][cc]=None
+                                cell = st["grid"][rr][cc]
+                                cell["hp"]-=160
+                                if cell["hp"]<=0:
+                                    record_plant_destroyed_by_zombie(st, cell.get("type"))
+                                    st["grid"][rr][cc]=None
                     if z in st["zombies"]: st["zombies"].remove(z)
                     continue
                 if z["special"]=="charge" and z["charge_cool"]<=0:
@@ -660,16 +690,23 @@ def step_game(room,dt):
                         z["smash_cool"]=2.5
                         for rr in range(max(0,z["row"]-1), min(ROWS, z["row"]+2)):
                             for cc in range(max(0,col-1), min(COLS, col+2)):
-                                if st["grid"][rr][cc]: st["grid"][rr][cc]=None
+                                if st["grid"][rr][cc]:
+                                    record_plant_destroyed_by_zombie(st, st["grid"][rr][cc].get("type"))
+                                    st["grid"][rr][cc]=None
                     else:
                         z["smash_cool"]-=dt
                     # also damages if plant survives
                     if st["grid"][z["row"]][col]:
-                        st["grid"][z["row"]][col]["hp"]-=z["dps"]*dt
-                        if st["grid"][z["row"]][col]["hp"]<=0: st["grid"][z["row"]][col]=None
+                        cell = st["grid"][z["row"]][col]
+                        cell["hp"]-=z["dps"]*dt
+                        if cell["hp"]<=0:
+                            record_plant_destroyed_by_zombie(st, cell.get("type"))
+                            st["grid"][z["row"]][col]=None
                 else:
                     plant["hp"]-=z["dps"]*dt
-                    if plant["hp"]<=0: st["grid"][z["row"]][col]=None
+                    if plant["hp"]<=0:
+                        record_plant_destroyed_by_zombie(st, plant.get("type"))
+                        st["grid"][z["row"]][col]=None
                 if z["charge_cool"]>0: z["charge_cool"]-=dt
             else:
                 buff=1.0
@@ -884,9 +921,11 @@ def game_loop(room_id):
                     kills_payload = {}
                     coins_payload = {}
                     plants_payload = {}
+                    destroyed_payload = {}
                     stats_kills = stats_struct.get("kills", {}) if isinstance(stats_struct, dict) else {}
                     stats_coins = stats_struct.get("coins", {}) if isinstance(stats_struct, dict) else {}
                     stats_plants = stats_struct.get("plants", {}) if isinstance(stats_struct, dict) else {}
+                    stats_destroyed = stats_struct.get("destroyed", {}) if isinstance(stats_struct, dict) else {}
                     for name in players_list:
                         try:
                             kills_payload[name] = int(stats_kills.get(name, 0))
@@ -912,6 +951,15 @@ def game_loop(room_id):
                                 except (TypeError, ValueError):
                                     continue
                         plants_payload[name] = clean_plants
+                        destroyed_plants = stats_destroyed.get(name, {}) if isinstance(stats_destroyed, dict) else {}
+                        clean_destroyed = {}
+                        if isinstance(destroyed_plants, dict):
+                            for ptype, count in destroyed_plants.items():
+                                try:
+                                    clean_destroyed[ptype] = int(count)
+                                except (TypeError, ValueError):
+                                    continue
+                        destroyed_payload[name] = clean_destroyed
 
                     game_over_payload = {
                         "room_id": room_id,
@@ -924,7 +972,10 @@ def game_loop(room_id):
                             "kills": kills_payload,
                             "coins": coins_payload,
                             "plants": plants_payload,
+                            "destroyed": destroyed_payload,
                         },
+                        "attacker": st.get("attacker") if st else None,
+                        "defender": st.get("defender") if st else None,
                     }
 
                     # award coins
