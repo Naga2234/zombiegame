@@ -813,7 +813,7 @@ function renderHome(){
     <div class="row"><button class="btn primary" onclick="openModal()"><span>➕</span> Создать игру</button></div>
     <div class="row"><button class="btn" onclick="showLeaderboard()"><span>🏆</span> Топ игроков</button></div>
     <div id="leaders" class="muted"></div>`;
-  main.innerHTML = `<div style="width:920px">
+  main.innerHTML = `<div class="main-home">
     <h3>Список комнат</h3>
     <div id="rooms" class="rooms-container"><div class="rooms-loading">Загрузка…</div></div>
   </div>`;
