@@ -981,24 +981,46 @@ function openRoom(id, locked){
 
 function renderRoom(){
   left.innerHTML = `<h2>Комната</h2>
-    <div id="roomInfo" class="muted"></div>
-    <div class="sep"></div>
-    <div class="row">
+    <div class="room-actions">
       <button class="btn" onclick="toggleReady()"><span>✅</span> Готов/Не готов</button>
       <button id="startBtn" class="btn primary" onclick="startGame()" disabled><span>🚀</span> Старт</button>
       <button class="btn" onclick="rematch()"><span>🔁</span> Реванш</button>
     </div>
-    <div class="row"><button class="btn" onclick="leaveRoom()"><span>⬅️</span> Выйти</button></div>
-    <div id="roleControls" class="row"></div>`;
-  main.innerHTML = `<div style="display:flex;gap:16px; width:980px">
-    <div style="flex:1">
-      <h3>Состав</h3><div id="players"></div><div class="sep"></div><div id="countdown" class="muted"></div>
+    <div class="room-actions room-actions--single">
+      <button class="btn" onclick="leaveRoom()"><span>⬅️</span> Выйти</button>
     </div>
-    <div style="width:420px">
-      <h3>Чат комнаты</h3>
-      <div id="chatBox" style="border:1px solid var(--border);border-radius:12px;height:360px;overflow:auto;background:#fff;padding:8px"></div>
-      <div style="display:flex;gap:8px;margin-top:8px"><input id="chatInput" placeholder="Сообщение..." /><button class="btn" onclick="sendChat()"><span>💬</span> Отправить</button></div>
-    </div>
+    <div class="sep"></div>
+    <div id="roleControls" class="room-actions room-actions--column"></div>`;
+  main.innerHTML = `<div class="room-layout">
+    <section class="room-panel room-panel--info">
+      <div class="room-panel__section">
+        <div class="room-panel__header">
+          <h3 class="room-panel__title">Информация</h3>
+          <button class="btn" onclick="copyRoomInvite()"><span>🔗</span> Скопировать ID/приглашение</button>
+        </div>
+        <div id="roomInfo" class="room-info muted"></div>
+        <div id="roomInfoFeedback" class="room-info__feedback"></div>
+      </div>
+      <div class="room-panel__section">
+        <div class="room-panel__header">
+          <h3 class="room-panel__title">Состав</h3>
+        </div>
+        <div class="room-roster">
+          <div id="players" class="room-roster__list"></div>
+        </div>
+        <div id="countdown" class="muted room-roster__countdown"></div>
+      </div>
+    </section>
+    <section class="room-panel room-panel--chat">
+      <div class="room-panel__header">
+        <h3 class="room-panel__title">Чат комнаты</h3>
+      </div>
+      <div id="chatBox" class="room-chat__log"></div>
+      <div class="room-chat__form">
+        <input id="chatInput" placeholder="Сообщение..." />
+        <button class="btn" onclick="sendChat()"><span>💬</span> Отправить</button>
+      </div>
+    </section>
   </div>`;
   if(ROOM_CACHE) drawRoomInfo(ROOM_CACHE);
 }
@@ -1008,12 +1030,16 @@ function drawRoomInfo(r){
   const playersDiv=document.getElementById('players');
   if(playersDiv){
     const roles=r.roles||{}; const assigned=r.assigned||{};
-    playersDiv.innerHTML = r.players.map(p=>{
-      const choice=roles[p.name]||'random';
-      const final=(assigned && assigned.defender===p.name)?'plant':(assigned && assigned.attacker===p.name)?'zombie':choice;
-      const badge = r.mode==='pvp'?` <span class="muted">(${roleIcon(final)})</span>`:'';
-      return `<span class="pill" onclick="openProfile('${p.name}')">${p.name} ${p.ready?'✔️':'❌'}${badge}</span>`;
-    }).join(' ');
+    if(!r.players.length){
+      playersDiv.innerHTML = `<div class="room-roster__empty">Пока пусто</div>`;
+    } else {
+      playersDiv.innerHTML = r.players.map(p=>{
+        const choice=roles[p.name]||'random';
+        const final=(assigned && assigned.defender===p.name)?'plant':(assigned && assigned.attacker===p.name)?'zombie':choice;
+        const badge = r.mode==='pvp'?` <span class="muted">(${roleIcon(final)})</span>`:'';
+        return `<span class="pill" onclick="openProfile('${p.name}')">${p.name} ${p.ready?'✔️':'❌'}${badge}</span>`;
+      }).join(' ');
+    }
   }
   const startBtn=document.getElementById('startBtn'); if(startBtn){ const allReady = (r.players.length===r.max_players) && r.players.every(p=>p.ready); startBtn.disabled = !(USER===r.owner && allReady); }
   MY_INDEX = Math.max(0, r.players.map(p=>p.name).indexOf(USER));
@@ -1023,6 +1049,43 @@ function drawRoomInfo(r){
   }
   if(r.started && VIEW!=='game'){ setView('game'); }
   if(r.mode==='pvp'){ buildRoleControls(r); }
+}
+
+async function copyRoomInvite(){
+  if(!ROOM_CACHE || !ROOM_CACHE.room_id) return;
+  if(!navigator?.clipboard?.writeText){
+    alert('Копирование не поддерживается в этом браузере');
+    return;
+  }
+  const {room_id, name, mode, max_players, locked} = ROOM_CACHE;
+  const baseUrl = window?.location?.origin || '';
+  const link = baseUrl ? `${baseUrl}/?room=${room_id}` : `ID: ${room_id}`;
+  const lines = [
+    `Присоединяйся в Zombie Coop!`,
+    `Комната: ${name || 'Без названия'}`,
+    `Режим: ${mode || 'coop'} · Мест: ${max_players}`,
+    `ID: ${room_id}`,
+    `Ссылка: ${link}`,
+    locked ? 'Комната защищена паролем.' : ''
+  ].filter(Boolean);
+  const text = lines.join('\n');
+  try{
+    await navigator.clipboard.writeText(text);
+    const feedback=document.getElementById('roomInfoFeedback');
+    if(feedback){
+      feedback.textContent='Приглашение скопировано';
+      feedback.classList.add('is-visible');
+      setTimeout(()=>{
+        if(feedback.textContent==='Приглашение скопировано'){
+          feedback.textContent='';
+          feedback.classList.remove('is-visible');
+        }
+      },2500);
+    }
+  } catch(err){
+    console.error('Clipboard error', err);
+    alert('Не удалось скопировать приглашение');
+  }
 }
 
 function roleIcon(code){
@@ -1038,9 +1101,9 @@ function buildRoleControls(r){
   const role=(r.roles||{})[USER]||'random';
   const disabled = !!r.started;
   const btn=(code,label)=>`<button class="btn${role===code?' primary':''}" ${disabled?'disabled':''} onclick="selectRole('${code}')">${label}</button>`;
-  box.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px">
+  box.innerHTML = `<div class="room-role">
     <div class="muted">Выбор роли</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <div class="room-role__choices">
       ${btn('plant','🌿 Растения')}
       ${btn('zombie','🧟 Зомби')}
       ${btn('random','🎲 Рандом')}
