@@ -562,6 +562,9 @@ socket.on('room_update', (data)=>{
   ROOM_CACHE=data.room;
   if(VIEW==='room'){ drawRoomInfo(data.room); }
   if(VIEW==='summary'){ renderGameSummary(); }
+  if(data && data.room && Object.prototype.hasOwnProperty.call(data.room,'chat')){
+    renderChatHistory(data.room.chat);
+  }
   if(data.room.countdown_until){
     COUNTDOWN_LEFT = Math.max(0, Math.floor(data.room.countdown_until - (Date.now()/1000)));
     startCountdownTicker();
@@ -639,11 +642,67 @@ socket.on('action_result', (payload={})=>{
     }
   }
 });
-socket.on('chat', (m)=>{
-  const box=document.getElementById('chatBox'); if(!box) return;
-  const sys = m.user==='system'?'muted':'';
-  box.innerHTML += `<div class="${sys}"><b>${m.user}:</b> ${m.text}</div>`;
+function formatChatTimestamp(value){
+  const num = Number(value);
+  if(Number.isFinite(num) && num > 0){
+    const millis = num < 1e12 ? num * 1000 : num;
+    return new Date(millis);
+  }
+  return new Date();
+}
+
+function appendChatMessage(msg={}, opts={}){
+  const box=document.getElementById('chatBox');
+  if(!box) return;
+  const message = msg || {};
+  const skipScroll = !!opts.skipScroll;
+  const user = (message.user || 'system').toString();
+  const text = (message.text || '').toString();
+  const date = formatChatTimestamp(message.time ?? Date.now());
+  const timeLabel = date.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+
+  const row=document.createElement('div');
+  row.className='chat-message'+(user==='system'?' chat-message--system':'');
+
+  const timeSpan=document.createElement('span');
+  timeSpan.className='chat-message__time';
+  timeSpan.textContent=timeLabel;
+
+  const authorSpan=document.createElement('span');
+  authorSpan.className='chat-message__author';
+  authorSpan.textContent=user;
+
+  const textSpan=document.createElement('span');
+  textSpan.className='chat-message__text';
+  textSpan.textContent=text;
+
+  row.appendChild(timeSpan);
+  row.appendChild(document.createTextNode(' '));
+  row.appendChild(authorSpan);
+  row.appendChild(document.createTextNode(': '));
+  row.appendChild(textSpan);
+
+  box.appendChild(row);
+  if(!skipScroll){
+    box.scrollTop=box.scrollHeight;
+  }
+}
+
+function renderChatHistory(messages){
+  const box=document.getElementById('chatBox');
+  if(!box) return;
+  box.innerHTML='';
+  if(Array.isArray(messages)){
+    messages.forEach(msg=>appendChatMessage(msg, {skipScroll:true}));
+  }
   box.scrollTop=box.scrollHeight;
+}
+
+socket.on('chat', (m={})=>{
+  if(ROOM_CACHE && Array.isArray(ROOM_CACHE.chat)){
+    ROOM_CACHE.chat=[...ROOM_CACHE.chat, m].slice(-100);
+  }
+  appendChatMessage(m);
 });
 socket.on('state_update', (payload={})=>{
   if(!ROOM_ID || payload.room_id!==ROOM_ID) return;
@@ -1023,6 +1082,19 @@ function renderRoom(){
     </section>
   </div>`;
   if(ROOM_CACHE) drawRoomInfo(ROOM_CACHE);
+  const chatInput=document.getElementById('chatInput');
+  if(chatInput && !chatInput.dataset.enterSubmit){
+    chatInput.dataset.enterSubmit='1';
+    chatInput.addEventListener('keydown',(ev)=>{
+      if(ev.key==='Enter' && !ev.shiftKey){
+        ev.preventDefault();
+        sendChat();
+      }
+    });
+  }
+  if(ROOM_CACHE && Array.isArray(ROOM_CACHE.chat)){
+    renderChatHistory(ROOM_CACHE.chat);
+  }
 }
 function drawRoomInfo(r){
   const info=document.getElementById('roomInfo');
@@ -1138,7 +1210,14 @@ function selectRole(role){ if(!ROOM_ID) return; socket.emit('select_role',{room_
 function toggleReady(){ socket.emit('toggle_ready',{room_id:ROOM_ID, username:USER}); }
 function startGame(){ socket.emit('start',{room_id:ROOM_ID, username:USER}); }
 function rematch(){ socket.emit('rejoin',{room_id:ROOM_ID, username:USER}); }
-function sendChat(){ const t=document.getElementById('chatInput').value.trim(); if(!t) return; socket.emit('chat',{room_id:ROOM_ID, username:USER, text:t}); document.getElementById('chatInput').value=''; }
+function sendChat(){
+  const input=document.getElementById('chatInput');
+  if(!input) return;
+  const t=input.value.trim();
+  if(!t) return;
+  socket.emit('chat',{room_id:ROOM_ID, username:USER, text:t});
+  input.value='';
+}
 function leaveRoom(){ socket.emit('leave_room',{room_id:ROOM_ID, username:USER}); ROOM_ID=null; localStorage.removeItem('ROOM_ID'); GAME_SUMMARY=null; setView('home'); listRooms(); stopCountdownTicker(); }
 
 function returnToLobby(){ GAME_SUMMARY=null; setView('room'); }
