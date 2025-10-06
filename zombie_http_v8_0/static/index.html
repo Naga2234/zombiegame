@@ -87,7 +87,10 @@
   .icon{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
   .badge{font-size:12px;padding:2px 6px;border-radius:8px;border:1px solid var(--border);background:#fff}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px}
-  .modal > .box{background:#fff;border-radius:14px;min-width:320px;max-width:520px;max-height:90vh;padding:16px;border:1px solid var(--border);overflow-y:auto}
+  .modal__content{display:flex;align-items:center;justify-content:center}
+  .modal > .box,
+  .modal__content .box{background:#fff;border-radius:14px;min-width:320px;max-width:520px;max-height:90vh;padding:16px;border:1px solid var(--border);overflow-y:auto}
+  #roomName:focus{outline:2px solid var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px rgba(96,165,250,0.35)}
   #shopBox{display:flex;flex-direction:column;gap:8px}
   .shop-items{max-height:60vh;overflow-y:auto;padding-right:4px}
   .avatar{width:28px;height:28px;border-radius:999px;vertical-align:middle;margin-right:8px}
@@ -137,23 +140,25 @@
 </div>
 
 <div class="modal" id="createModal">
-  <div class="box">
-    <h3>Создать игру</h3>
-    <div class="row"><label>Название комнаты</label>
-      <input id="roomName" placeholder="Например: Вечерний кооп" />
-    </div>
-    <div class="row"><label>Пароль (необязательно)</label>
-      <input id="roomPass" placeholder="Оставь пустым для публичной" />
-    </div>
-    <div class="row"><label>Режим</label>
-      <select id="modeSelect"><option value="coop">Coop</option><option value="pvp">PvP</option><option value="survival" disabled>Survival (WIP)</option></select>
-    </div>
-    <div class="row"><label>Количество игроков</label>
-      <select id="maxPlayers"><option>2</option><option disabled>3</option><option disabled>4</option></select>
-    </div>
-    <div class="row" style="text-align:right">
-      <button class="btn" onclick="closeModal()">Отмена</button>
-      <button class="btn primary" onclick="confirmCreate()">Создать</button>
+  <div class="modal__content">
+    <div class="box">
+      <h3>Создать игру</h3>
+      <div class="row"><label>Название комнаты</label>
+        <input id="roomName" placeholder="Например: Вечерний кооп" />
+      </div>
+      <div class="row"><label>Пароль (необязательно)</label>
+        <input id="roomPass" placeholder="Оставь пустым для публичной" />
+      </div>
+      <div class="row"><label>Режим</label>
+        <select id="modeSelect"><option value="coop">Coop</option><option value="pvp">PvP</option><option value="survival" disabled>Survival (WIP)</option></select>
+      </div>
+      <div class="row"><label>Количество игроков</label>
+        <select id="maxPlayers"><option>2</option><option disabled>3</option><option disabled>4</option></select>
+      </div>
+      <div class="row" style="text-align:right">
+        <button class="btn" onclick="closeModal()">Отмена</button>
+        <button class="btn primary" onclick="confirmCreate()">Создать</button>
+      </div>
     </div>
   </div>
 </div>

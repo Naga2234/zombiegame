@@ -163,8 +163,35 @@ function md5(s){return CryptoJS.MD5(s.toLowerCase().trim()).toString()}
 function avatarUrl(name){ return `https://www.gravatar.com/avatar/${md5(name)}?d=identicon`; }
 
 function setView(v){ VIEW=v; if(HOME_TIMER){clearInterval(HOME_TIMER); HOME_TIMER=null;} render(); }
-function openModal(){ modal.style.display='flex'; }
-function closeModal(){ modal.style.display='none'; }
+function handleCreateModalKeydown(event){
+  if(event.key==='Escape'){
+    event.preventDefault();
+    closeModal();
+  }
+}
+
+function handleCreateModalPointerDown(event){
+  if(event.target===modal || (event.target && event.target.classList && event.target.classList.contains('modal__content'))){
+    closeModal();
+  }
+}
+
+function openModal(){
+  if(!modal) return;
+  modal.style.display='flex';
+  document.addEventListener('keydown', handleCreateModalKeydown);
+  modal.addEventListener('pointerdown', handleCreateModalPointerDown);
+  const roomInput=document.getElementById('roomName');
+  if(roomInput && typeof roomInput.focus==='function'){
+    roomInput.focus();
+  }
+}
+function closeModal(){
+  if(!modal) return;
+  modal.style.display='none';
+  document.removeEventListener('keydown', handleCreateModalKeydown);
+  modal.removeEventListener('pointerdown', handleCreateModalPointerDown);
+}
 
 function isProfileModalOpen(){
   return profileModal && profileModal.style.display==='flex';
