@@ -813,7 +813,10 @@ function renderHome(){
     <div class="row"><button class="btn primary" onclick="openModal()"><span>➕</span> Создать игру</button></div>
     <div class="row"><button class="btn" onclick="showLeaderboard()"><span>🏆</span> Топ игроков</button></div>
     <div id="leaders" class="muted"></div>`;
-  main.innerHTML = `<div style="width:920px"><h3>Список комнат</h3><div id="rooms"></div></div>`;
+  main.innerHTML = `<div style="width:920px">
+    <h3>Список комнат</h3>
+    <div id="rooms" class="rooms-container"><div class="rooms-loading">Загрузка…</div></div>
+  </div>`;
   showLeaderboard(); listRooms(); HOME_TIMER=setInterval(listRooms, 2000);
 }
 async function showLeaderboard(){
@@ -822,20 +825,32 @@ async function showLeaderboard(){
     document.getElementById('leaders').innerHTML = j.leaders.map((u,i)=>`${i+1}. <span class="pill" onclick="openProfile('${u.user}')">${u.user}</span> — ${u.score||0}`).join('<br>');
   }
 }
+function renderRoomCard(r){
+  const playersList = Array.isArray(r.players) ? r.players : [];
+  const players = playersList.map(p=>`<span class="pill" onclick="openProfile('${p.name}')">${p.name} ${p.ready?'✔️':'❌'}</span>`).join(' ');
+  const cap = `${playersList.length}/${r.max_players}`;
+  const started = r.started ? '<span class="badge" style="border-color:#fecaca;background:#fee2e2">Идёт</span>' : '<span class="badge" style="border-color:#bbf7d0;background:#dcfce7">Лобби</span>';
+  const lock = r.locked ? '🔒' : '🔓';
+  return `<div class="room">
+    <div><b>${lock} ${r.name}</b> (ID: ${r.room_id}) ${started} <span class="badge">Режим: ${r.mode}</span> <span class="badge">Игроков: ${cap}</span></div>
+    <div class="muted" style="margin-top:6px">${players || 'Пока пусто'}</div>
+    <div class="row"><button class="btn" onclick="openRoom('${r.room_id}', ${r.locked})"><span>➡️</span> Открыть</button></div>
+  </div>`;
+}
 async function listRooms(){
   const j=await API('/api/list_rooms'); if(j.status!=='ok') return;
   const wrap=document.getElementById('rooms'); if(!wrap) return;
-  wrap.innerHTML = j.rooms.map(r=>{
-    const players = r.players.map(p=>`<span class="pill" onclick="openProfile('${p.name}')">${p.name} ${p.ready?'✔️':'❌'}</span>`).join(' ');
-    const cap = `${r.players.length}/${r.max_players}`;
-    const started = r.started ? '<span class="badge" style="border-color:#fecaca;background:#fee2e2">Идёт</span>' : '<span class="badge" style="border-color:#bbf7d0;background:#dcfce7">Лобби</span>';
-    const lock = r.locked ? '🔒' : '🔓';
-    return `<div class="room">
-      <div><b>${lock} ${r.name}</b> (ID: ${r.room_id}) ${started} <span class="badge">Режим: ${r.mode}</span> <span class="badge">Игроков: ${cap}</span></div>
-      <div class="muted" style="margin-top:6px">${players || 'Пока пусто'}</div>
-      <div class="row"><button class="btn" onclick="openRoom('${r.room_id}', ${r.locked})"><span>➡️</span> Открыть</button></div>
+  const rooms = Array.isArray(j.rooms) ? j.rooms : [];
+  if(!rooms.length){
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="empty-state__icon">🕹️</div>
+      <div class="empty-state__title">Пока нет активных комнат</div>
+      <div class="empty-state__text">Создай первую игру и пригласи друзей в кооператив!</div>
+      <button class="btn primary" onclick="openModal()"><span>➕</span> Создать комнату</button>
     </div>`;
-  }).join('');
+    return;
+  }
+  wrap.innerHTML = rooms.map(renderRoomCard).join('');
 }
 function confirmCreate(){
   const mode=document.getElementById('modeSelect').value;
