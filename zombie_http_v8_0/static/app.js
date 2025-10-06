@@ -1208,6 +1208,19 @@ function renderGameOverSummary(data){
   const modeLabel=formatModeLabel(rawMode);
   const isPvP = String(rawMode||'').toLowerCase()==='pvp';
 
+  let pvpRewardNote='';
+  if(isPvP){
+    const coinTotals=players.map(name=>safeStatNumber(coins[name]));
+    const bestReward=coinTotals.length? Math.max(...coinTotals) : 0;
+    if(bestReward>0){
+      const winners=players.filter(name=>safeStatNumber(coins[name])===bestReward);
+      const winnerLabel=winners.join(', ');
+      pvpRewardNote=`Победитель (${winnerLabel}) получил ${bestReward} монет (1 монета каждые 15 секунд матча).`;
+    } else {
+      pvpRewardNote='Монеты начисляются победителю: 1 монета каждые 15 секунд матча. В этот раз награда не начислена.';
+    }
+  }
+
   if(!players.length){
     return `<div class="empty-state" style="max-width:680px">
       <div class="empty-state__icon">📊</div>
@@ -1262,6 +1275,7 @@ function renderGameOverSummary(data){
     <div style="padding:28px;border-radius:26px;background:${meta.background};color:${meta.text};box-shadow:0 24px 60px rgba(15,23,42,0.15);display:flex;flex-direction:column;gap:8px">
       <div style="font-size:28px;font-weight:700;display:flex;align-items:center;gap:12px">${meta.emoji} ${meta.title}</div>
       <div style="font-size:14px;opacity:0.9">Режим: ${modeLabel} · Очки: ${scoreLabel} · Время: ${durationLabel}</div>
+      ${pvpRewardNote?`<div style="font-size:14px;opacity:0.9">${pvpRewardNote}</div>`:''}
     </div>
     <div>
       <h3 style="margin:0 0 12px">Статистика игроков</h3>
