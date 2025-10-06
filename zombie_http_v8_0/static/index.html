@@ -106,6 +106,12 @@
   .room-chat__log{border:1px solid var(--border);border-radius:14px;background:#ffffff;padding:12px;height:360px;overflow:auto}
   .room-chat__form{display:flex;gap:8px;align-items:center}
   .room-chat__form input{flex:1}
+  .chat-message{font-size:13px;line-height:1.35;margin-bottom:6px;display:flex;align-items:flex-start;gap:6px}
+  .chat-message:last-child{margin-bottom:0}
+  .chat-message__time{font-size:11px;color:var(--muted);flex-shrink:0;min-width:42px}
+  .chat-message__author{font-weight:600}
+  .chat-message__text{white-space:pre-wrap;word-break:break-word}
+  .chat-message--system .chat-message__author,.chat-message--system .chat-message__text{color:var(--muted)}
   .room-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
   .room-actions:empty{display:none;margin:0}
   .room-actions--single{justify-content:flex-start}

@@ -507,7 +507,9 @@ def step_game(room,dt):
             st["wave_cd"] = ZOMBIE_WAVE_COOLDOWN
             st["wave_number"] = st.get("wave_number",1) + 1
             st["weather"] = random_weather()
-            socketio.emit("chat", {"user":"system","text":f"Зомби готовят волну {st['wave_number']}!"}, to=room["id"])
+            msg = append_room_chat(room, "system", f"Зомби готовят волну {st['wave_number']}!")
+            if msg:
+                socketio.emit("chat", msg, to=room["id"])
         else:
             st["wave_cd"] = max(0.0, st.get("wave_cd",0.0) - dt)
             if st["wave_cd"] <= 0:
@@ -751,12 +753,27 @@ def room_payload(room_id):
         "max_players":r["max_players"],
         "started":r["started"],
         "countdown_until": r.get("countdown_until"),
-        "chat": r["chat"][-100:],
+        "chat": [dict(msg) for msg in r.get("chat", [])[-100:]],
         "locked": bool(r.get("password")),
         "roles": {u: r.get("roles",{}).get(u, "random") for u in r["players"]},
         "assigned": r.get("assigned_roles"),
         "zombie_decks": {u: r.get("zombie_decks",{}).get(u, []) for u in r["players"]}
     }}
+
+
+def append_room_chat(room: dict, user: str, text: str):
+    if not room:
+        return None
+    entry = {
+        "user": str((user or "system") or "system"),
+        "text": str(text or ""),
+        "time": time.time(),
+    }
+    chat_log = room.setdefault("chat", [])
+    chat_log.append(entry)
+    if len(chat_log) > 200:
+        room["chat"] = chat_log[-200:]
+    return entry
 
 def game_loop(room_id):
     t_prev=time.time()
@@ -780,7 +797,9 @@ def game_loop(room_id):
                     room["countdown_until"]=None
                     socketio.emit("room_update", room_payload(room_id), to=room_id)
                     socketio.emit("game_started", {"room_id": room_id}, to=room_id)
-                    socketio.emit("chat", {"user":"system","text":"Бой начался! Волна 1"}, to=room_id)
+                    msg = append_room_chat(room, "system", "Бой начался! Волна 1")
+                    if msg:
+                        socketio.emit("chat", msg, to=room_id)
 
         now=time.time(); dt=now-t_prev; t_prev=now
         with rooms_lock:
@@ -1135,9 +1154,10 @@ def on_join_room(data):
         if not r: emit("join_result", {"status":"error","msg":"Комната не найдена"}); return
         if r.get("password") and r["password"] != passwd:
             emit("join_result", {"status":"error","msg":"Неверный пароль"}); return
+        chat_msg = None
         if username not in r["players"] and not r["started"] and len(r["players"])<r["max_players"]:
             r["players"].append(username); r["ready"][username]=False
-            r["chat"].append({"user":"system","text":f"{username} присоединился"})
+            chat_msg = append_room_chat(r, "system", f"{username} присоединился")
         ensure_user(username)
         prof = sanitized_profile(username)
         r.setdefault("roles",{})
@@ -1151,7 +1171,8 @@ def on_join_room(data):
             join_room(f"user:{username}")
         emit("join_result", {"status":"ok","room": room_payload(room_id)["room"]})
         socketio.emit("room_update", room_payload(room_id), to=room_id)
-        socketio.emit("chat", {"user":"system","text":f"{username} присоединился"}, to=room_id)
+        if chat_msg:
+            socketio.emit("chat", chat_msg, to=room_id)
 
 @socketio.on("rejoin")
 def on_rejoin(data):
@@ -1175,24 +1196,28 @@ def on_leave_room(data):
         if username:
             leave_room(f"user:{username}")
             leave_room(room_id)
+        leave_msg = None
+        host_msg = None
         if username in r["players"] and not r["started"]:
             r["players"].remove(username)
             r["ready"].pop(username, None)
-            r["chat"].append({"user":"system","text":f"{username} вышел"})
-            socketio.emit("chat", {"user":"system","text":f"{username} вышел"}, to=room_id)
+            leave_msg = append_room_chat(r, "system", f"{username} вышел")
             if username in r.get("roles",{}):
                 r["roles"].pop(username, None)
             if username in r.get("zombie_decks",{}):
                 r["zombie_decks"].pop(username, None)
         if not r["started"] and r["players"] and r["owner"] not in r["players"]:
             r["owner"] = r["players"][0]
-            r["chat"].append({"user":"system","text":f"Новый хост — {r['owner']}"})
-            socketio.emit("chat", {"user":"system","text":f"Новый хост — {r['owner']}"}, to=room_id)
+            host_msg = append_room_chat(r, "system", f"Новый хост — {r['owner']}")
         if not r["players"] and not r["started"]:
             rooms.pop(room_id, None)
             socketio.emit("room_deleted", {"room_id": room_id})
             return
         socketio.emit("room_update", room_payload(room_id), to=room_id)
+        if leave_msg:
+            socketio.emit("chat", leave_msg, to=room_id)
+        if host_msg:
+            socketio.emit("chat", host_msg, to=room_id)
 
 @socketio.on("toggle_ready")
 def on_toggle_ready(data):
@@ -1213,6 +1238,29 @@ def on_toggle_ready(data):
                     decks[username] = list((prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:]))[:6])
         r["ready"][username] = not cur
         socketio.emit("room_update", room_payload(room_id), to=room_id)
+
+@socketio.on("chat")
+def on_chat_message(data):
+    data = data or {}
+    room_id = (data.get("room_id") or "").strip()
+    username = (data.get("username") or "").strip()
+    text = data.get("text")
+    if not room_id or text is None:
+        return
+    clean_text = str(text).strip()
+    if not clean_text:
+        return
+    if len(clean_text) > 500:
+        clean_text = clean_text[:500]
+    with rooms_lock:
+        room = rooms.get(room_id)
+        if not room:
+            return
+        if username and username not in room.get("players", []):
+            return
+        msg = append_room_chat(room, username or "system", clean_text)
+    if msg:
+        socketio.emit("chat", msg, to=room_id)
 
 @socketio.on("select_role")
 def on_select_role(data):
@@ -1278,9 +1326,10 @@ def on_start(data):
                     decks[attacker] = list((prof.get("zombie_deck", DEFAULT_ZOMBIE_DECK[:]))[:6])
             r["assigned_roles"] = roles
         r["countdown_until"] = time.time() + 10
-        r["chat"].append({"user":"system","text":"Старт через 10 секунд!"})
+        countdown_msg = append_room_chat(r, "system", "Старт через 10 секунд!")
         socketio.emit("room_update", room_payload(room_id), to=room_id)
-        socketio.emit("chat", {"user":"system","text":"Старт через 10 секунд!"}, to=room_id)
+        if countdown_msg:
+            socketio.emit("chat", countdown_msg, to=room_id)
 
 @socketio.on("spawn_zombie_manual")
 def on_spawn_zombie_manual(data):
@@ -1307,7 +1356,9 @@ def on_next_wave(data):
         st=r["game"]
         if st.get("await_next"):
             build_next_wave(st, r["players"])
-            socketio.emit("chat", {"user":"system","text":f"Волна {st['wave_number']}! Погода: {st['weather']}"}, to=room_id)
+            msg = append_room_chat(r, "system", f"Волна {st['wave_number']}! Погода: {st['weather']}")
+            if msg:
+                socketio.emit("chat", msg, to=room_id)
 
 @socketio.on("transfer_sun")
 def on_transfer_sun(data):
@@ -1324,7 +1375,9 @@ def on_transfer_sun(data):
         if cur >= amt:
             st["suns"][src]=cur-amt
             st["suns"][dst]=st["suns"].get(dst,0.0)+amt
-            socketio.emit("chat", {"user":"system","text":f"{src} передал {int(amt)} солнца игроку {dst}"}, to=room_id)
+            msg = append_room_chat(r, "system", f"{src} передал {int(amt)} солнца игроку {dst}")
+            if msg:
+                socketio.emit("chat", msg, to=room_id)
 
 @socketio.on("sell_plant")
 def on_sell_plant(data):
@@ -1444,7 +1497,7 @@ def api_create_room():
             "name": room_name, "password": password,
             "mode":mode,"max_players":max_players,"players":[username],
             "ready":{username:False},"started":False,"game":None,"owner":username,
-            "countdown_until": None, "chat":[{"user":"system","text":f"Комната «{room_name}» создана хостом {username}"}]
+            "countdown_until": None, "chat":[{"user":"system","text":f"Комната «{room_name}» создана хостом {username}","time":time.time()}]
         }
         rooms[rid]["roles"]={username:"random"}
         rooms[rid]["assigned_roles"]=None
