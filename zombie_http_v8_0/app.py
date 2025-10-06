@@ -810,6 +810,58 @@ def game_loop(room_id):
                                     players_list.append(name)
                                     seen_players.add(name)
 
+                    game_mode = (st.get("mode") if st else None) or room.get("mode")
+                    outcome_code = str((st.get("outcome") if st else "") or "").lower()
+                    pvp_winners = []
+                    if st and game_mode == "pvp":
+                        if outcome_code == "lose":
+                            pvp_winners = [st.get("attacker")]
+                        elif outcome_code == "win":
+                            pvp_winners = [st.get("defender")]
+                        elif outcome_code == "draw":
+                            pvp_winners = []
+                        else:
+                            pvp_winners = []
+                        pvp_winners = [w for w in pvp_winners if w]
+                        for winner in pvp_winners:
+                            if winner not in seen_players:
+                                players_list.append(winner)
+                                seen_players.add(winner)
+
+                    participants = list(players_list)
+                    if isinstance(stats_struct, dict):
+                        stats_coins_section = stats_struct.get("coins")
+                        if not isinstance(stats_coins_section, dict):
+                            stats_coins_section = {}
+                            stats_struct["coins"] = stats_coins_section
+                    else:
+                        stats_coins_section = {}
+                    base_coins = {}
+                    if st and isinstance(st.get("coins"), dict):
+                        base_coins = dict(st.get("coins", {}))
+                    coin_awards = {}
+                    if st and game_mode == "pvp":
+                        reward = max(0, duration // 15)
+                        for name in participants:
+                            coin_awards[name] = 0
+                        for winner in pvp_winners:
+                            coin_awards[winner] = coin_awards.get(winner, 0) + reward
+                        if st is not None:
+                            st["coins"] = {name: int(coin_awards.get(name, 0)) for name in participants}
+                        for name in participants:
+                            stats_coins_section[name] = int(coin_awards.get(name, 0))
+                    else:
+                        for name in participants:
+                            value = stats_coins_section.get(name, base_coins.get(name, 0))
+                            try:
+                                coin_awards[name] = int(value)
+                            except (TypeError, ValueError):
+                                coin_awards[name] = 0
+                        if st is not None and isinstance(st.get("coins"), dict):
+                            st["coins"] = {name: coin_awards.get(name, 0) for name in participants}
+                        for name in participants:
+                            stats_coins_section[name] = int(coin_awards.get(name, 0))
+
                     kills_payload = {}
                     coins_payload = {}
                     plants_payload = {}
@@ -842,7 +894,6 @@ def game_loop(room_id):
                                     continue
                         plants_payload[name] = clean_plants
 
-                    game_mode = (st.get("mode") if st else None) or room.get("mode")
                     game_over_payload = {
                         "room_id": room_id,
                         "outcome": outcome,
@@ -860,13 +911,16 @@ def game_loop(room_id):
                     # award coins
                     for u in room["players"]:
                         ensure_user(u)
-                        users=load_users()
+                    users = load_users()
+                    for u in room["players"]:
+                        users.setdefault(u, {})
                         users[u]["score"]=users[u].get("score",0)+score
                         users[u]["games_played"]=users[u].get("games_played",0)+1
                         if outcome=="win":
                             users[u]["games_won"]=users[u].get("games_won",0)+1
-                        users[u]["coins"]=users[u].get("coins",0)+int(st["coins"].get(u,0))
-                        save_users(users)
+                        award = int(coin_awards.get(u, 0))
+                        users[u]["coins"]=users[u].get("coins",0)+award
+                    save_users(users)
                     room["started"]=False; room["game"]=None
                     room["assigned_roles"]=None
                     socketio.emit("room_update", room_payload(room_id), to=room_id)
