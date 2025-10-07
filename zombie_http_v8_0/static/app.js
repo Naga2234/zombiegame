@@ -1798,6 +1798,31 @@ function redrawZombie(){
   }
   if(HOVER_CELL){
     ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.strokeRect(HOVER_CELL.c*80+2, HOVER_CELL.r*80+2, 80-4, 80-4);
+    const modeRaw = ROOM_CACHE?.mode || '';
+    if(String(modeRaw).toLowerCase()==='pvp' && CURRENT_Z_CARD){
+      const targetX = HOVER_CELL.c*80+40;
+      const targetY = HOVER_CELL.r*80+40;
+      const spawnX = Math.max(targetX, 9*80-6);
+      ctx.save();
+      ctx.globalAlpha=0.55;
+      ctx.strokeStyle='#f97316';
+      ctx.fillStyle='#f97316';
+      ctx.lineWidth=4;
+      ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.moveTo(spawnX, targetY);
+      ctx.lineTo(targetX, targetY);
+      ctx.stroke();
+      const headLength=14;
+      const headWidth=8;
+      ctx.beginPath();
+      ctx.moveTo(targetX, targetY);
+      ctx.lineTo(targetX+headLength, targetY-headWidth);
+      ctx.lineTo(targetX+headLength, targetY+headWidth);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
   }
   if(!st.running){
     ctx.font='26px Inter';
