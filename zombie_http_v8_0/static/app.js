@@ -1294,6 +1294,9 @@ function renderDefenderGame(isPvP){
     if(cellData){
       const plantType=cellData?.type;
       if(!plantType){ setStatus('Нельзя продать неизвестное растение'); return; }
+      const plantName = PLANT_META_MAP[plantType]?.name || 'растение';
+      const confirmText = `Продать ${plantName}?`;
+      if(!window.confirm(confirmText)){ setStatus('Продажа отменена'); return; }
       PENDING_ACTIONS.push({type:'sell', row:r, col:c, ptype:plantType});
       socket.emit('sell_plant',{room_id:ROOM_ID,username:USER,row:r,col:c,ptype:plantType});
       return;
