@@ -187,6 +187,7 @@ def record_plant_destroyed_by_zombie(st: dict, plant_type: str):
         entry = {}
     entry[plant_type] = entry.get(plant_type, 0) + 1
     destroyed[attacker] = entry
+    maybe_award_resource_drop(st, attacker, PLANT_RESOURCE_DROPS, plant_type)
 
 
 def record_resource_gain(st: dict, owner: str, resource_code: str, amount: int = 1):

@@ -1456,6 +1456,9 @@ function renderGameOverSummary(data){
         roleHint='Участник PvP';
       }
     }
+    const isSelf = typeof USER==='string' && USER && name===USER;
+    const cardClasses=['summary-card'];
+    if(isSelf){ cardClasses.push('summary-card--self'); }
     let plantsHtml='<span class="muted">—</span>';
     if(plantMap && typeof plantMap==='object'){
       const entries=Object.entries(plantMap).filter(([,cnt])=>safeStatNumber(cnt)>0);
@@ -1517,7 +1520,7 @@ function renderGameOverSummary(data){
         }).join(' ');
       }
     }
-    return `<div class="summary-card" style="border:1px solid var(--border);border-radius:18px;padding:18px;background:#fff;display:flex;flex-direction:column;gap:14px;box-shadow:0 18px 36px rgba(15,23,42,0.08)">
+    return `<div class="${cardClasses.join(' ')}">
       <div style="display:flex;align-items:center;gap:12px">
         <img class="avatar" src="${avatarUrl(name)}&s=48" alt="${name}" style="width:48px;height:48px"/>
         <div>
