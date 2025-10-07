@@ -18,6 +18,7 @@ let PLANT_COOLDOWN_UNTIL=0;
 let USERNAME_CHECK_STATE={available:false,msg:'Введите логин',tone:'muted',pending:false};
 let USERNAME_CHECK_COUNTER=0;
 let PROFILE_INV_TAB='plants';
+let SELL_CONFIRMATION=null;
 
 const NICKNAME_ADJECTIVES=[
   'Swift','Brave','Lucky','Frosty','Cosmic','Mighty','Sunny','Shadow','Electric','Silent'
@@ -623,6 +624,7 @@ socket.on('action_result', (payload={})=>{
     PLANT_COOLDOWN_UNTIL = Date.now() + remain*1000;
   }
   if(payload.status==='sold'){
+    SELL_CONFIRMATION=null;
     if(pending && pending.type==='sell'){
       const refund = Number(payload.refund)||0;
       if(Number.isFinite(Number(payload.sun))){
@@ -1257,6 +1259,24 @@ function renderGame(){
   else renderDefenderGame(mode==='pvp');
 }
 
+function confirmSellPlant(row, col, plantType){
+  const now = Date.now();
+  const current = SELL_CONFIRMATION;
+  if(current && current.row===row && current.col===col && current.ptype===plantType && now-current.ts < 2500){
+    SELL_CONFIRMATION=null;
+    return true;
+  }
+  const plantName = PLANT_META_MAP[plantType]?.name || 'растение';
+  SELL_CONFIRMATION={row,col,ptype:plantType,ts:now};
+  setTimeout(()=>{
+    if(SELL_CONFIRMATION && SELL_CONFIRMATION.row===row && SELL_CONFIRMATION.col===col && SELL_CONFIRMATION.ptype===plantType && SELL_CONFIRMATION.ts===now){
+      SELL_CONFIRMATION=null;
+    }
+  }, 2500);
+  setStatus(`Нажмите ещё раз в течение 2 секунд, чтобы продать ${plantName}`);
+  return false;
+}
+
 function renderDefenderGame(isPvP){
   CURRENT_ROLE_UI='defender';
   left.innerHTML = `<h2>Идёт бой</h2>
@@ -1294,13 +1314,12 @@ function renderDefenderGame(isPvP){
     if(cellData){
       const plantType=cellData?.type;
       if(!plantType){ setStatus('Нельзя продать неизвестное растение'); return; }
-      const plantName = PLANT_META_MAP[plantType]?.name || 'растение';
-      const confirmText = `Продать ${plantName}?`;
-      if(!window.confirm(confirmText)){ setStatus('Продажа отменена'); return; }
+      if(!confirmSellPlant(r,c,plantType)) return;
       PENDING_ACTIONS.push({type:'sell', row:r, col:c, ptype:plantType});
       socket.emit('sell_plant',{room_id:ROOM_ID,username:USER,row:r,col:c,ptype:plantType});
       return;
     }
+    SELL_CONFIRMATION=null;
     const p=PLANTS.find(x=>x.code===CURRENT); if(!p) return;
     const nowTs=Date.now();
     if(nowTs < PLANT_COOLDOWN_UNTIL){
