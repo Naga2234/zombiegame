@@ -75,11 +75,30 @@ const ZOMBIE_LIBRARY={
   boss:{name:'Босс',icon:'👑',cost:120,cooldown:25}
 };
 
-const RESOURCE_ITEMS=[
+const RESOURCE_STORE_ITEMS=[
   {code:'fertilizer',name:'Удобрение',icon:'🧪',amount:5,description:'Ускоряет рост растений'},
   {code:'sun_boost',name:'Солнечный заряд',icon:'☀️',amount:15,description:'Доп. запас солнечной энергии'},
   {code:'repair_kit',name:'Ремкомплект',icon:'🧰',amount:3,description:'Материалы для укрепления защит'},
 ];
+const RESOURCE_DROP_ITEMS=[
+  {code:'sun_crystal',name:'Солнечные кристаллы',icon:'🌞'},
+  {code:'seed_bundle',name:'Семена',icon:'🌾'},
+  {code:'power_leaf',name:'Листья силы',icon:'🍃'},
+  {code:'pollen',name:'Цветочная пыльца',icon:'🌸'},
+  {code:'root_core',name:'Корень-укрепитель',icon:'🌱'},
+  {code:'dew_drop',name:'Капли росы',icon:'💧'},
+  {code:'bone',name:'Кости',icon:'🦴'},
+  {code:'brain_fragment',name:'Фрагменты мозга',icon:'🧠'},
+  {code:'rust_metal',name:'Ржавый металл',icon:'⚙️'},
+  {code:'skull_fragment',name:'Черепки',icon:'💀'},
+  {code:'rotten_fabric',name:'Гнилая ткань',icon:'🕸️'},
+  {code:'powder_shard',name:'Осколки пороха',icon:'💥'},
+  {code:'black_slime',name:'Чёрная слизь',icon:'🩸'},
+  {code:'hell_coal',name:'Адский уголь',icon:'🔥'},
+  {code:'ice_shard',name:'Ледяной осколок',icon:'❄️'},
+  {code:'zombie_eye',name:'Глаз зомби',icon:'👁️'},
+];
+const RESOURCE_ITEMS=[...RESOURCE_STORE_ITEMS, ...RESOURCE_DROP_ITEMS];
 const RESOURCE_META_MAP = RESOURCE_ITEMS.reduce((acc,item)=>{acc[item.code]=item; return acc;},{});
 
 const left = document.getElementById('leftPanel');
@@ -196,7 +215,7 @@ function collectSummaryPlayers(data){
   const base=Array.isArray(payload.players)? payload.players.slice():[];
   const seen=new Set(base);
   const stats=payload.stats&&typeof payload.stats==='object'?payload.stats:{};
-  ['kills','coins','plants','destroyed'].forEach(key=>{
+  ['kills','coins','plants','destroyed','resources'].forEach(key=>{
     const section=stats[key];
     if(section && typeof section==='object'){
       Object.keys(section).forEach(name=>{
@@ -585,6 +604,7 @@ socket.on('game_over', (payload={})=>{
         coins: statsPayload.coins && typeof statsPayload.coins==='object' ? {...statsPayload.coins} : {},
         plants: statsPayload.plants && typeof statsPayload.plants==='object' ? {...statsPayload.plants} : {},
         destroyed: statsPayload.destroyed && typeof statsPayload.destroyed==='object' ? {...statsPayload.destroyed} : {},
+        resources: statsPayload.resources && typeof statsPayload.resources==='object' ? {...statsPayload.resources} : {},
       },
     };
     setView('summary');
@@ -1368,6 +1388,7 @@ function renderGameOverSummary(data){
   const coins=stats.coins&&typeof stats.coins==='object'?stats.coins:{};
   const plants=stats.plants&&typeof stats.plants==='object'?stats.plants:{};
   const destroyed=stats.destroyed&&typeof stats.destroyed==='object'?stats.destroyed:{};
+  const resources=stats.resources&&typeof stats.resources==='object'?stats.resources:{};
   const scoreLabel=safeStatNumber(payload.score||0);
   const durationLabel=formatDuration(payload.duration);
   const rawMode=(payload.mode||ROOM_CACHE?.mode||'coop');
@@ -1402,6 +1423,7 @@ function renderGameOverSummary(data){
     const coinCount=safeStatNumber(coins[name]);
     const plantMap=plants[name];
     const destroyedMap=destroyed[name];
+    const resourceMap=resources[name];
     let roleHint = 'Защитник';
     if(isPvP){
       if(attackerName && name===attackerName){
@@ -1453,6 +1475,26 @@ function renderGameOverSummary(data){
         : '<span class="muted">—</span>';
       destroyedHtml=`<div><div class="muted">Уничтожено растений: <b>${safeStatNumber(totalDestroyed)}</b></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${listHtml}</div></div>`;
     }
+    let resourcesHtml='<span class="muted">—</span>';
+    if(resourceMap && typeof resourceMap==='object'){
+      const entries=Object.entries(resourceMap).filter(([,cnt])=>safeStatNumber(cnt)>0);
+      entries.sort((a,b)=>{
+        const metaA=RESOURCE_META_MAP[a[0]]||{};
+        const metaB=RESOURCE_META_MAP[b[0]]||{};
+        const nameA=(metaA.name||a[0]).toString();
+        const nameB=(metaB.name||b[0]).toString();
+        return nameA.localeCompare(nameB,'ru');
+      });
+      if(entries.length){
+        resourcesHtml=entries.map(([code,count])=>{
+          const meta=RESOURCE_META_MAP[code]||{};
+          const icon=meta.icon||'📦';
+          const title=meta.name||code;
+          const qty=safeStatNumber(count);
+          return `<span class="pill" title="${title}">${icon} ×${qty}</span>`;
+        }).join(' ');
+      }
+    }
     return `<div class="summary-card" style="border:1px solid var(--border);border-radius:18px;padding:18px;background:#fff;display:flex;flex-direction:column;gap:14px;box-shadow:0 18px 36px rgba(15,23,42,0.08)">
       <div style="display:flex;align-items:center;gap:12px">
         <img class="avatar" src="${avatarUrl(name)}&s=48" alt="${name}" style="width:48px;height:48px"/>
@@ -1468,6 +1510,10 @@ function renderGameOverSummary(data){
       <div>
         <div class="muted">Растения</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${plantsHtml}</div>
+      </div>
+      <div>
+        <div class="muted">Ресурсы</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${resourcesHtml}</div>
       </div>
       ${destroyedHtml}
     </div>`;
