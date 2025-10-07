@@ -1632,23 +1632,9 @@ function buildInventory(){
   const items=PLANTS.slice(start,end);
   inv.innerHTML = items.map((p)=>{
     const lack = (SUN_NOW < p.cost);
-    const hpHint = PLANT_HP_HINT[p.code];
-    const ratio = p.cost>0 ? Math.min(1, Math.max(0, SUN_NOW/p.cost)) : 1;
-    const shortage = Math.max(0, p.cost - SUN_NOW);
-    return `<button type="button" class="card inventory-card${lack?' disabled is-locked':''}" data-code="${p.code}" data-cost="${p.cost}">
-      <div class="inventory-card__icon">${p.icon}</div>
-      <div class="inventory-card__body">
-        <div class="inventory-card__header">
-          <div class="inventory-card__name">${p.name}</div>
-          <span class="inventory-card__key">${p.key}</span>
-        </div>
-        <div class="inventory-card__meta">
-          <span class="inventory-card__cost">${p.cost} ☀️</span>
-          ${hpHint?`<span class="inventory-card__hp">${hpHint} HP</span>`:''}
-        </div>
-        <div class="inventory-card__progress${lack?' is-visible':''}"><span style="width:${Math.round(ratio*100)}%"></span></div>
-        <div class="inventory-card__status${lack?'':' inventory-card__status--ready'}">${lack?`Нужно ещё ${shortage} ☀️`:'Готово к высадке'}</div>
-      </div>
+    return `<button type="button" class="card${lack?' disabled':''}" data-code="${p.code}">
+      <div class="icon">${p.icon}</div>
+      <div><div>${p.name}</div><div class="muted">${p.key}) ${p.cost}</div></div>
     </button>`;
   }).join('');
   inv.onclick = (e)=>{
@@ -1664,29 +1650,9 @@ function highlightInventory(){
   nodes.forEach((n)=>{
     const code=n.getAttribute('data-code');
     const p=PLANTS.find(x=>x.code===code);
-    const selected = (code===CURRENT);
-    if(selected){ n.classList.add('selected'); }
-    else { n.classList.remove('selected'); }
+    n.style.outline = (code===CURRENT) ? '2px solid var(--accent)' : 'none';
     if(!p){ return; }
-    const lack = (SUN_NOW < p.cost);
-    const ratio = p.cost>0 ? Math.min(1, Math.max(0, SUN_NOW/p.cost)) : 1;
-    const shortage = Math.max(0, p.cost - SUN_NOW);
-    n.classList.toggle('disabled', lack);
-    n.classList.toggle('is-locked', lack);
-    const progressWrap=n.querySelector('.inventory-card__progress');
-    const progress=progressWrap?.querySelector('span');
-    if(progress){ progress.style.width=`${Math.round(ratio*100)}%`; }
-    if(progressWrap){ progressWrap.classList.toggle('is-visible', lack && (p.cost>0)); }
-    const status=n.querySelector('.inventory-card__status');
-    if(status){
-      if(lack){
-        status.textContent = p.cost>0 ? `Нужно ещё ${shortage} ☀️` : 'Не хватает ресурсов';
-        status.classList.remove('inventory-card__status--ready');
-      } else {
-        status.textContent = 'Готово к высадке';
-        status.classList.add('inventory-card__status--ready');
-      }
-    }
+    if(p){ if(SUN_NOW < p.cost) n.classList.add('disabled'); else n.classList.remove('disabled'); }
   });
 }
 window.addEventListener('keydown', (e)=>{
