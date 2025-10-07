@@ -36,7 +36,9 @@ DEFAULT_PLANT_OWNED = ["peashooter","sunflower","wallnut"]
 DEFAULT_ZOMBIE_CLASSES = ["normal", "cone", "bucket"]
 DEFAULT_ZOMBIE_DECK = DEFAULT_ZOMBIE_CLASSES[:]
 
-RESOURCE_DROP_CHANCE = 0.20
+# Lowered the base drop chance so that all resource drops are rarer for both
+# plants and zombies.
+RESOURCE_DROP_CHANCE = 0.10
 
 PLANT_RESOURCE_DROPS = {
     "sunflower": {"item": "sun_crystal", "name": "Солнечные кристаллы", "icon": "🌞"},
